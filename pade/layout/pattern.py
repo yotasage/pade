@@ -77,10 +77,10 @@ class Box:
 
 
     def __str__(self) -> str:
-        return f'Box(origin: {self.origin}, diaginal: {self.diagonal})'
+        return f'Box(origin: {self.origin}, diagonal: {self.diagonal})'
 
     def __repr__(self) -> str:
-        return f'Box(origin: {self.origin}, diaginal: {self.diagonal})'
+        return f'Box(origin: {self.origin}, diagonal: {self.diagonal})'
 
     def __mul__(self, other):
         if other is None:
@@ -128,7 +128,6 @@ class Box:
         else:
             raise NotImplementedError()
 
-
     def __sub__(self, other):
         if other is None:
             return copy.deepcopy(self)
@@ -171,7 +170,6 @@ class Box:
         else:
             raise NotImplementedError()
 
-
     def __contains__(self, other):
         if isinstance(other, Coordinate):
             xin = self.x_min() <= other[0] and other[0] <= self.x_max()
@@ -185,10 +183,8 @@ class Box:
         else:
             raise NotImplementedError()
 
-
     def is_disjoint(self, other):
         return (self*other == None)
-
 
     def get_border(self):
         # Returns list of lines defining the border
@@ -201,13 +197,28 @@ class Box:
                 vec = Vector(corners[i], corners[0])
             lines.append(Line(corners[i], vec))
         return lines
-
-
-    def w(self):
+    
+    @property
+    def width(self) -> float:
         return np.abs(self.diagonal[0])
-
-    def h(self):
+    
+    @property
+    def height(self) -> float:
         return np.abs(self.diagonal[1])
+
+    # Optional short aliases
+    w = width
+    h = height
+
+    @property
+    def x(self) -> float:
+        '''x coordinate of the box's center.'''
+        return self.center().x
+    
+    @property
+    def y(self) -> float:
+        '''y coordinate of the box's center.'''
+        return self.center().y
 
     def opposite_corner(self):
         return self.origin + self.diagonal
@@ -248,16 +259,16 @@ class Box:
         return self.origin + self.diagonal/2
 
     def center_left(self):
-        return self.lower_left() + (0, self.h()/2)
+        return self.lower_left() + (0, self.h/2)
 
     def center_right(self):
-        return self.lower_right() + (0, self.h()/2)
+        return self.lower_right() + (0, self.h/2)
 
     def center_top(self):
-        return self.upper_left() + (self.w()/2, 0)
+        return self.upper_left() + (self.w/2, 0)
 
     def center_bottom(self):
-        return self.lower_left() + (self.w()/2, 0)
+        return self.lower_left() + (self.w/2, 0)
 
     def to_list(self, decimals=3):
         return [self.origin.to_list(decimals=decimals), self.opposite_corner().to_list(decimals=decimals)]
@@ -305,8 +316,6 @@ class Box:
         box.origin = origin
         box.diagonal = new_diag
         return box
-
-
 
 class Pattern:
     """

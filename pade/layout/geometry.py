@@ -1,18 +1,25 @@
 import numpy as np
 import copy
+from dataclasses import dataclass
+from typing import Iterable
 
-
+@dataclass(frozen=True) # This makes the Coordiante immutable
 class Coordinate:
-    def __init__(self, coord) -> None:
-        # Assume subscriptable input
-        self.x = np.round(float(coord[0]), decimals=3)
-        self.y = np.round(float(coord[1]), decimals=3)
+    x: float
+    y: float
 
-    def to_skill(self):
-        return f'{self.x}:{self.y}'
+    def to_skill(self, decimals=3):
+        return f"{round(self.x, decimals)}:{round(self.y, decimals)}"
 
     def to_list(self, decimals=3):
         return [np.round(self.x, decimals=decimals), np.round(self.y, decimals=decimals)]
+
+    def __iter__(self):
+        yield self.x
+        yield self.y
+
+    def tuple(self):
+        return (self.x, self.y)
 
     def __round__(self, ndigits=0):
         return Coordinate((round(self[0], ndigits), round(self[1], ndigits)))
@@ -46,13 +53,37 @@ class Coordinate:
             return Coordinate((self[0] - other[0], self[1] - other[1]))
         except:
             return Coordinate((self[0] - other, self[1] - other))
+        
+    def __truediv__ (self, value: float):
+        return Coordinate((self[0] / value, self[1] / value))
+
+    def __mul__(self, scalar: float):
+        return Coordinate(self.x * scalar, self.y * scalar)
+
+    __rmul__ = __mul__
 
     def __str__(self) -> str:
         return f'Coordinate({self[0]},{self[1]})'
 
     def __repr__(self) -> str:
         return f'Coordinate({self[0]},{self[1]})'
+    
+    def translate(self, dx=0, dy=0):
+        return Coordinate(self.x + dx, self.y + dy)
+    
+    @classmethod
+    def midpoint(cls, a: 'Coordinate', b: 'Coordinate'):
+        return cls.avg([a, b])
+    
+    @classmethod
+    def avg(cls, coords: Iterable['Coordinate']):
+        if not coords:
+            raise ValueError("Cannot calculate average of empty coordinate list")
+    
+        coords = list(coords) # supports any iterable
 
+        total = sum(coords[1:], coords[0])
+        return total / len(coords)
 
 class Vector:
     """

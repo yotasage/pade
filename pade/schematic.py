@@ -138,6 +138,9 @@ class Cell:
     """
     Cell view
     """
+
+    read_files = {}
+
     def __init__(self, cell_name, instance_name, parent_cell=None, **kwargs):
         """
         Initialize cell_view
@@ -262,22 +265,33 @@ class Cell:
                 cell.quick_connect([t1, t2], [t1, t2])
 
 
+    # TODO: Store instance of subcell in memory (global in Cell class or child class, maybe in a dict).
+    # This should reduce disk interactions like reading netlist templates for parsing in this method.
+    # The instance can most likely not be used in every new instance, and must therefore be copied, 
+    # something which might impact performance greatly again.
     def extract_data_from_file(self, file, **kwargs):
         """
         Read a spectre netlist and define parameters and terminals accordingly
             Supports line continuity for both parameters and terminals.
 
         """
-        # Clean file by removing new line characters
-        with open(file, "r") as raw_f:
-            string_clean_lines = ""
-            for line in raw_f.readlines():
-                clean_line = line.rstrip().lstrip()
-                if(clean_line.endswith('\\')):
-                    clean_line = clean_line.rstrip('\\')
-                else:
-                    clean_line += '\n'
-                string_clean_lines += clean_line
+        
+        # Check if the file has already been read, if not, read and save it in a Class variable.
+        if (file not in Cell.read_files.keys()):
+            # Clean file by removing new line characters
+            with open(file, "r") as raw_f:
+                string_clean_lines = ""
+                for line in raw_f.readlines():
+                    clean_line = line.rstrip().lstrip()
+                    if(clean_line.endswith('\\')):
+                        clean_line = clean_line.rstrip('\\')
+                    else:
+                        clean_line += '\n'
+                    string_clean_lines += clean_line
+
+                Cell.read_files[file] = string_clean_lines
+        else:
+            string_clean_lines = Cell.read_files[file]
 
         for line in string_clean_lines.splitlines():
             if line.startswith('//'):
@@ -485,6 +499,17 @@ class Cell:
         Return a list of all terminal objects
         """
         return list(self.terminals.values())
+    
+    def get_all_terminal_names(self):
+        """
+        Return a list of all terminal names
+        """
+        tl = list(self.terminals.values()) # tl = terminal list
+        tnl = [] # tnl = terminal name list
+        for t in tl:
+            tnl.append(t.name)
+
+        return tnl
 
     def get_unconnected_terminals(self):
         """
@@ -686,7 +711,7 @@ class Cell:
                 for line in f.readlines():
                     s += line
             return s
-        # Check if Cell as unconnected terminals
+        # Check if Cell has unconnected terminals
         ut_list = list(self.terminals.keys())
         for key in self.subcells:
             c = self.subcells[key]

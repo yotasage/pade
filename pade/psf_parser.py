@@ -20,6 +20,7 @@ class PSFParser(object):
         # Dictionary for holding signals
         # self.signals = {'sim_name:analysis:name': Signal()}
         self.signals = {}
+        self.meta = {}
 
     def parse(self):
         """
@@ -55,6 +56,7 @@ class PSFParser(object):
             # Parsing might fail
             try:
                 psf = PSF(file)
+                self.meta = psf.meta
             except Exception as err:
                 warn(f'Could not parse file {file}, error occurred: {err}')
                 continue

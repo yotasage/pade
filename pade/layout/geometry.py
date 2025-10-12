@@ -1,6 +1,7 @@
 import numpy as np
 from typing import Iterable, Union
 
+# TODO: Add support for DBU and units
 class Coordinate:
     # Manual immutability
     __slots__ = ("_x", "_y")  # optional, but makes instances smaller and faster
@@ -21,7 +22,7 @@ class Coordinate:
         else:
             raise TypeError("Coordinate accepts (x, y), ((x, y)), [x, y], or another Coordinate")
 
-        # store as private attributes
+        # Bypasses custom __setattr__
         object.__setattr__(self, "_x", _x)
         object.__setattr__(self, "_y", _y)
 

@@ -5,6 +5,7 @@ from inform import warn
 import numpy as np
 import copy
 from skillbridge import Workspace
+from typing import List
 
 class Path:
     """
@@ -88,7 +89,7 @@ class Route:
             self.start = start.box.center()
             self.start_port = start
             # Use start port box width(height) as routing width
-            self.width = min(start.box.w(), start.box.h())
+            self.width = min(start.box.w, start.box.h)
             self.layer = start.layer
         elif isinstance(start, Path):
             self.start = start.get_box().center()
@@ -107,7 +108,7 @@ class Route:
             self.end_port = stop
             if self.width is None or self.layer is None:
                 # Use stop port box width(height) as routing width
-                self.width = min(stop.box.w(), stop.box.h())
+                self.width = min(stop.box.w, stop.box.h)
                 self.layer = stop.layer
         elif isinstance(stop, Path):
             self.stop = stop.get_box().center()
@@ -182,7 +183,7 @@ class Route:
     def add_path(self, path):
         self.path_list.append(path)
 
-    def add_via_start(self, via_name_list, n_rows=1, n_cols=2, **via_attr):
+    def add_via_start(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
         p = self.path_list[0]
         if p.begin_style == 'extend':
             center = p.start
@@ -194,10 +195,10 @@ class Route:
             raise ValueError(f'Unknown path begin style: {p.begin_style}')
 
         for via_name in via_name_list:
-            via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, via_attr=via_attr)
+            via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
             self._add_via(via)
 
-    def add_via_end(self, via_name_list, n_rows=1, n_cols=2, **via_attr):
+    def add_via_end(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
         p = self.path_list[-1]
         if p.end_style == 'extend':
             center = p.stop
@@ -207,9 +208,8 @@ class Route:
         else:
             raise ValueError(f'Unknown path end style: {p.end_style}')
 
-        center = self.path_list[-1].stop
         for via_name in via_name_list:
-            via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, via_attr=via_attr)
+            via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
             self._add_via(via)
 
     def _add_via(self, via):
@@ -468,6 +468,9 @@ class Via:
         self.n_cols = kwargs.get('n_cols')
         self.center = kwargs.get('center')
 
+        self.via_attr = kwargs.get('via_attr', {})
+        offset = kwargs.get('offset', [0, 0])
+
         self.box = kwargs.get('box')
         if self.box is not None:
             self.center = self.box.center()
@@ -477,7 +480,8 @@ class Via:
             self.box = port.box
             self.center = port.box.center()
 
-        self.via_attr = kwargs.get('via_attr', {})
+        if self.center is not None:
+            self.center += offset
 
         # Index of via spacing rules in tech file parameter list
         # Might be tech-dependent?
@@ -486,10 +490,23 @@ class Via:
         self.via2bound_space_rule_index = 6
 
     def __str__(self) -> str:
-        return f"Via {self.via_def_name} with {self.n_rows} and {self.n_cols} columns"
+        return f"Via {self.via_def_name} with {self.n_rows} rows and {self.n_cols} columns"
 
     def __repr__(self) -> str:
         return self.__str__()
+
+    @property
+    def center(self) -> Coordinate:
+        return self._center
+    
+    @center.setter   #property-name.setter decorator
+    def center(self, value):
+        if (isinstance(value, list)):
+            self._center = Coordinate(value)
+        elif (isinstance(value, Box)):
+            self._center = value.center()
+        else:
+            self._center = value
 
     def parse_tech_file_rules(self, tech_file_param_list):
         # Calculate required number of cols and rows based on box
@@ -567,6 +584,14 @@ class Port:
             raise ValueError('Invalid input arguments')
         self.box.set_origin(center=self.position)
 
+    @property
+    def position(self) -> Coordinate:
+        return self._position
+    
+    @position.setter   #property-name.setter decorator
+    def position(self, value):
+        self._position = Coordinate(value)
+
     def __str__(self) -> str:
         return f"Port {self.name} in {self.layer} at {self.position}"
 
@@ -579,6 +604,16 @@ class Port:
         else:
             raise NotImplementedError()
 
+    @property
+    def x(self) -> float:
+        return self.box.center().x
+    
+    @property
+    def y(self) -> float:
+        return self.box.center().y
+    
+    def center(self) -> Coordinate:
+        return self.box.center()
 
     def translate(self, translation):
         self.position += translation

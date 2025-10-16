@@ -17,7 +17,7 @@ class LayoutItem:
         self.instance_name = instance_name
 
         self.origin = kwargs.get('origin', Coordinate((0,0)))
-        self.set_orientation(kwargs.get('orientation'))
+        self.orientation = kwargs.get('orientation')
 
         self.pattern_list = kwargs.get('pattern_list', [])
         self.instance_list = kwargs.get('instance_list', [])
@@ -46,16 +46,33 @@ class LayoutItem:
             if pname == name:
                 return value
 
-    def set_origin(self, origin):
-        old_origin = self.origin
-        self.origin = Coordinate(origin)
-        # Update origin for ports
-        translation = Coordinate(origin) - old_origin
-        for port in self.port_list:
-            port.translate(translation)
+    @property
+    def origin(self) -> str:
+        return self._origin
+    
+    @origin.setter   #property-name.setter decorator
+    def origin(self, value):
+        if hasattr(self, '_origin'):
+            old_origin = self._origin
+            self._origin = Coordinate(value)
 
-    def set_orientation(self, orientation):
-        self.orientation = orientation if not orientation is None else "R0"
+            # Update origin for ports
+            translation = self._origin - old_origin
+            for port in self.port_list:
+                port.translate(translation)
+
+        else: self._origin = Coordinate(value)
+
+    @property
+    def orient(self) -> str:
+        return self._orient
+    
+    @orient.setter   #property-name.setter decorator
+    def orient(self, value):
+        self._orient = value if not value is None else "R0"
+
+    # Optional short aliases
+    orientation = orient
 
     def y_max(self):
         return np.max(np.array([p.y_max() for p in self.pattern_list]))
@@ -98,7 +115,7 @@ class LayoutItem:
     def add_pattern(self, pattern):
         self.pattern_list.append(pattern)
 
-    def add_box(self, box, layer, purpose, margin=0):
+    def add_box(self, box, layer, purpose, margin=0.0):
         pattern = Pattern(layer=layer, purpose=purpose, box_list=[box])
         if margin != 0:
             pattern = pattern.enclosure(margin, layer=layer, purpose=purpose)
@@ -134,7 +151,7 @@ class LayoutItem:
             via = Via(via_name, port=port)
             self.add_via(via)
 
-    def add_via_from_pattern(self, via_def_name, pattern: Pattern, margin=0, margin_both=False, **via_attr):
+    def add_via_from_pattern(self, via_def_name, pattern: Pattern, margin=0.0, margin_both=False, **via_attr):
         """
         Add vias that fill pattern region
         margin_both: Add margin in both directions
@@ -142,7 +159,7 @@ class LayoutItem:
         for box in pattern.box_list:
             if margin_both:
                 new_diag = box.diagonal - Vector([0, 2*margin]) - Vector([2*margin, 0])
-            elif box.h() > box.w():
+            elif box.h > box.w:
                 # If taller than wide, subtract margin from y component of diagonal
                 new_diag = box.diagonal - Vector([0, 2*margin])
             else:
@@ -152,7 +169,7 @@ class LayoutItem:
             via = Via(via_def_name, box=new_box, via_attr=via_attr)
             self.add_via(via)
 
-    def add_enclosure(self, layer, purpose, margin=0):
+    def add_enclosure(self, layer, purpose, margin=0.0):
         """
         Add new pattern that enclose self with the specified margin
 
@@ -163,7 +180,7 @@ class LayoutItem:
         self.add_pattern(p)
         return p
 
-    def add_instance_enclosure(self, instance, layer, purpose, margin=0):
+    def add_instance_enclosure(self, instance, layer, purpose, margin=0.0):
         """
         Adds enclosure around an instance
         """
@@ -171,7 +188,7 @@ class LayoutItem:
         p.add_box(Box(origin=instance.box.lower_left()-margin, opposite_corner=instance.box.upper_right()+margin), absolute_position=True)
         self.print_pattern(p)
 
-    def add_bbox_enclosure(self, box, layer, purpose, margin=0):
+    def add_bbox_enclosure(self, box, layer, purpose, margin=0.0):
         """
         Adds enclosure around a bounding box
         """
@@ -234,7 +251,6 @@ class LayoutItem:
         except:
             pass
 
-
     def get_cell_view_port(self, terminal_name):
         pin = self.get_cell_view_terminal(terminal_name)
         if pin is None:
@@ -244,7 +260,6 @@ class LayoutItem:
         layer = pin.fig.layer_name
         port = Port(terminal_name, layer, box)
         return port
-
 
     def open_layoutview(self, mode='w'):
         self.cell_view = self.ws.db.open_cell_view_by_type(self.lib_name, self.cell_name, "layout", "maskLayout", mode)
@@ -262,7 +277,6 @@ class LayoutItem:
         # Add pattern and return for reference
         self.add_pattern(ring_pattern)
         return Ring(ring_pattern)
-
 
     def get_all_instances(self, recursive=False):
         """
@@ -401,7 +415,7 @@ class LayoutItem:
             self.open_layoutview()
         # if not port in self.port_list:
         #     self.add_port(port)
-        font_size = min(port.box.w(), port.box.h()) / 5
+        font_size = min(port.box.w, port.box.h) / 5
 
         fig = self.ws.db.create_rect(self.cell_view, [port.layer, 'drawing'], port.box.to_list())
         # create net raise error if the net exists
@@ -412,8 +426,6 @@ class LayoutItem:
         self.ws.db.create_term( net, port.name, "inputOutput")
         self.ws.db.create_pin(net, fig)
         self.ws.db.create_label(self.cell_view, [port.layer, 'label'], port.position.to_list(), port.name, "centerCenter", "R0", "stick", font_size)
-
-
 
 class LayoutInstance:
     """
@@ -428,10 +440,13 @@ class LayoutInstance:
         lib_name = cell.lib_name
         cell_name = kwargs.get('cell_name', cell.cell_name) # Might need to overwrite
         instance_name = kwargs.get('instance_name', cell.instance_name)
+
+        properties = kwargs.pop('properties', None)
+        
         lay_item = LayoutItem(lib_name, cell_name, instance_name)
 
         origin = kwargs.get('origin', Coordinate((0,0)))
-        lay_item.set_origin(origin)
+        lay_item.origin = origin
         # Print this layout item in paren layout
         lay_inst = parent_layout_item.print_instance(lay_item)
         # edit all cdf parameters of cell in instance
@@ -455,11 +470,10 @@ class LayoutInstance:
         lay_inst.parent_transform = kwargs.get('transform')
         lay_inst.update_transform(lay_inst.inst.transform)
 
-        # Set properties from lay_items property list
-        for name, value in lay_item.property_list:
-            lay_inst.set_property(name, value)
-        return lay_inst
+        lay_inst.set_properties(lay_item.property_list)
+        if (properties is not None): lay_inst.set_properties(properties)
 
+        return lay_inst
 
     def __init__(self, instance_id, **kwargs) -> None:
         self.inst = instance_id
@@ -482,6 +496,22 @@ class LayoutInstance:
 
     def __str__(self) -> str:
         return f"{self.cell_name} {self.name}"
+
+    def __getitem__(self, key):
+        '''
+        This allows properties that are stored on the layout instance to be accessed as items in a dict(onary).
+        
+        Usage example for a mosfet:
+        mos_type = self.NMOS if 'NCH' in mos.classes else self.PMOS
+        mos[f'G{mos_type}1'] -> Coordinate(0.715,15.34)
+
+        How this had to be done previously:
+        mos.get_transform_property(f'G{mos_type}1') -> Coordinate(0.715,15.34)
+        '''
+        allowed = self.get_property_name_list()
+        if key not in allowed:
+            raise KeyError(f"{key!r} is not a valid key for {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
+        return getattr(self, key)
 
     def __getattr__(self, item):
         # Check if it is a coordinate
@@ -545,11 +575,32 @@ class LayoutInstance:
             pass
 
         raise AttributeError(f'Failed to get {item} from {self}')
+        # TODO: Consider returning None instead of crashing everything. Though it seems like the expected behavior is for an error to be raised in these cases. Maybe implement a method that returns True if an attribute exist and False if it does not. If so, that method can be check first before running this method.
+        # return None
 
     def get_property(self, name):
         for prop in self.inst.prop:
             if prop.name == name:
                 return prop.value
+            
+    def get_properties(self):
+        return self.inst.prop
+    
+    def get_property_list(self):
+        property_list = []
+        for p in self.inst.prop:
+            property_list.append((p.name, p.value))
+        return property_list
+    
+    def get_property_name_list(self):
+        property_name_list = []
+        for p in self.inst.prop:
+            property_name_list.append(p.name)
+        return property_name_list
+    
+    def set_properties(self, property_list):
+        for name, value in property_list:
+            self.set_property(name, value)
 
     def get_coordinate(self, cname):
         return self.get_transform_property(cname)
@@ -563,19 +614,17 @@ class LayoutInstance:
             c = self.get_property(pname)
         except:
             raise RuntimeError(f'Failed to get property {pname} from {self}')
-        if c is None:
-            raise ValueError(f'Property {pname} could not be converted to Coordinate or Box')
         # Check if is a coordinate
         try:
-            _ = Coordinate(c)
-            c = Coordinate(self.ws.db.transform_point(c, self.transform))
+            c = self.ws.db.transform_point(c, self.transform)
+            c = Coordinate(c)
             return c
         except:
             pass
         # Check if it is a b_box
         try:
-            _ = Box(c)
-            b = Box(self.transform_bbox(c))
+            b = self.transform_bbox(c)
+            b = Box(b)
             return b
         except:
             pass
@@ -612,7 +661,6 @@ class LayoutInstance:
             pc = pc.parent_cell
         return name_string
 
-
     def set_box(self):
         """
         Update box based on layout instance
@@ -632,25 +680,42 @@ class LayoutInstance:
     def set_property(self, name, value):
         self.ws.db.setq(self.inst, value, name)
 
-    def set_origin(self, origin):
+    @property
+    def origin(self) -> Coordinate:
+        return self._origin
+    
+    @origin.setter   #property-name.setter decorator
+    def origin(self, value):
+        self._origin = Coordinate(value)
+
         old_trans = self.inst.transform
-        self.inst.transform = [[origin[0], origin[1]], old_trans[1], old_trans[2]]
+        self.inst.transform = [[self._origin.x, self._origin.y], old_trans[1], old_trans[2]]
         self.update_transform(self.inst.transform)
         self.set_box()
 
-    def set_orient(self, orient):
+    @property
+    def orient(self) -> str:
+        return self._orient
+    
+    @orient.setter   #property-name.setter decorator
+    def orient(self, value):
+        self._orient = value
+
         old_trans = self.inst.transform
-        self.inst.transform = [old_trans[0], orient, old_trans[2]]
+        self.inst.transform = [old_trans[0], self._orient, old_trans[2]]
         self.update_transform(self.inst.transform)
         self.set_box()
+
+    # Optional aliases
+    orientation = orient
 
     def get_inst_origin(self):
         return Coordinate(self.inst.transform[0])
 
     def translate(self, translation):
-        self.set_origin(self.get_inst_origin() + translation)
+        self.origin = self.get_inst_origin() + translation
 
-    def align_top(self, other, margin=0, parent=None):
+    def align_top(self, other, margin=0.0, parent=None):
         """
         Place self on top of other with specified margin
         """
@@ -659,6 +724,17 @@ class LayoutInstance:
         if parent:
             otherbox = Box(parent.transform_bbox(other.box.to_list()))
         translation = Vector([self.box.x_min(), self.box.y_min()], [otherbox.x_min(), otherbox.y_max() + margin])
+        self.translate(translation)
+
+    def align(self, c0, c1, axis=-1):
+        '''
+        axis specifies which axis to align along. Default is -1, which means both axes.
+        '''
+
+        if axis == 0: translation = Vector([c0.x, 0], [c1.x, 0])
+        elif axis == 1: translation = Vector([0, c0.y], [0, c1.y])
+        else: translation = Vector(c0, c1)
+
         self.translate(translation)
 
     def align_hcenter(self, other, parent=None):
@@ -683,7 +759,7 @@ class LayoutInstance:
         translation = Vector(self.box.center(), [self.box.center()[0], otherbox.center()[1]])
         self.translate(translation)
 
-    def align_below(self, other , margin=0, parent=None):
+    def align_below(self, other , margin=0.0, parent=None):
         """
         Place self below of other with specified margin
         """
@@ -696,7 +772,7 @@ class LayoutInstance:
             [otherbox.x_min(), otherbox.y_min() - margin])
         self.translate(translation)
 
-    def align_right(self, other , margin=0, parent=None):
+    def align_right(self, other , margin=0.0, parent=None):
         """
         Place self right of other with specified margin
         """
@@ -707,7 +783,7 @@ class LayoutInstance:
         translation = Vector([self.box.x_min(), self.box.y_min()], [otherbox.x_max() + margin, otherbox.y_min()])
         self.translate(translation)
 
-    def align_left(self, other , margin=0, parent=None):
+    def align_left(self, other , margin=0.0, parent=None):
         """
         Place self left of other with specified margin
         """
@@ -717,6 +793,12 @@ class LayoutInstance:
             otherbox = Box(parent.transform_bbox(other.box.to_list()))
         translation = Vector([self.box.x_max(), self.box.y_min()], [otherbox.x_min() - margin, otherbox.y_min()])
         self.translate(translation)
+
+    # Optional aliases
+    align_over = align_top
+    align_above = align_top
+    align_under = align_below
+    align_bottom = align_below
 
     def set_xmin(self, xmin):
         """
@@ -747,8 +829,13 @@ class LayoutInstance:
         translation = Vector([0, self.box.y_max()], [0, ymax])
         self.translate(translation)
 
-    def set_center(self, center):
-        translation = Vector(self.box.center(), center)
+    @property
+    def center(self) -> Coordinate:
+        return self.box.center()
+    
+    @center.setter   #property-name.setter decorator
+    def center(self, value):
+        translation = Vector(self.box.center(), value)
         self.translate(translation)
 
     def edit_cdf_param(self, cdf_param_name, value):
@@ -862,7 +949,6 @@ class LayoutInstance:
         cv = self.ws.db.open_cell_view_by_type(self.lib_name, self.cell_name, "layout", "maskLayout", "r")
         return cv.b_box[1][0]
 
-
     def get_property_box_list(self, pattern):
         """
         Returns the property boxes that match the given regex pattern
@@ -875,8 +961,38 @@ class LayoutInstance:
             return box_list
         else:
             return []
-
-
+        
+    def get_properties_of_type(self, pattern, cls=Coordinate):
+        """
+        Returns the properties that match the given regex pattern and that can be instantiated as the given class. This is useful in case the pattern may match several properties that might not be of the same type. Especially, if there is a specific type that you want to get.
+        """
+        if not self.inst.prop is None:
+            match_list = [p.name for p in self.inst.prop if re.match(pattern, p.name)]
+            
+            attr_list = [getattr(self, key) for key in match_list]
+            
+            inst_list = []
+            try:
+                for el in attr_list:
+                    if (isinstance(el, cls)):
+                        inst_list.append(el)
+            except:
+                pass
+            return inst_list
+        else:
+            return []
+        
+    def get_properties_match(self, pattern):
+        """
+        Returns the properties that match the given regex pattern.
+        """
+        if not self.inst.prop is None:
+            match_list = [p.name for p in self.inst.prop if re.match(pattern, p.name)]
+            
+            attr_list = [getattr(self, key) for key in match_list]
+            return attr_list
+        else:
+            return []
 
     def get_property_box(self, pname):
         """

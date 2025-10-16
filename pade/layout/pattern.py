@@ -512,12 +512,18 @@ class Pattern:
         x_center = (self.x_max() + self.x_min()) / 2
         y_center = (self.y_max() + self.y_min()) / 2
         return Coordinate((x_center, y_center))
-
-    def w(self):
+    
+    @property
+    def width(self) -> float:
         return self.x_max() - self.x_min()
-
-    def h(self):
+    
+    @property
+    def height(self) -> float:
         return self.y_max() - self.y_min()
+
+    # Optional short aliases
+    w = width
+    h = height
 
     def translate(self, translation, in_place=False):
         """

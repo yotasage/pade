@@ -535,7 +535,7 @@ class Pattern:
             box.translate(translation, in_place=True)
         return p
 
-    def enclosure(self, margin=0, **kwargs):
+    def enclosure(self, margin=0.0, **kwargs):
         """
         Returns enclosure around whole region covered by self
         """
@@ -543,7 +543,7 @@ class Pattern:
         p.add_box(Box(origin=self.lower_left()-margin, opposite_corner=self.upper_right()+margin), absolute_position=True)
         return p
 
-    def box_enclosure(self, margin=0, **kwargs):
+    def box_enclosure(self, margin=0.0, **kwargs):
         """
         Returns enclosure around each box of self
         """

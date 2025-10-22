@@ -125,7 +125,18 @@ class Coordinate:
         # Since immutable, just return self
         return self
 
-    def translate(self, dx=0.0, dy=0.0):
+    def translate(self, *args): # , dx=0.0, dy=0.0
+        if len(args) == 2:
+            dx, dy = float(args[0]), float(args[1])
+        elif len(args) == 1:
+            arg = args[0]
+            if isinstance(arg, Coordinate):
+                dx, dy = float(arg.x), float(arg.y)
+            elif hasattr(arg, "__getitem__") and len(arg) == 2:
+                dx, dy = float(arg[0]), float(arg[1])
+            else:
+                raise TypeError(f"Invalid argument: {arg}")
+            
         return self.__class__(self.x + dx, self.y + dy)
     
     @classmethod

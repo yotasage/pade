@@ -5,7 +5,7 @@ from inform import warn
 import numpy as np
 import copy
 from skillbridge import Workspace
-from typing import List
+from typing import List, Callable, Optional, ClassVar
 
 class Path:
     """
@@ -456,6 +456,10 @@ class Via:
     """
     Via. May have multiple rows and columns of vias
     """
+
+    # Class-level callback (shared by all instances)
+    adjust_callback: ClassVar[Optional[Callable[['Via'], bool]]] = None
+
     @staticmethod
     def find_via_def_name_from_layer_name(tech_file, layer1_name, layer2_name):
         for via_def in tech_file.via_defs:
@@ -466,20 +470,17 @@ class Via:
         self.via_def_name = via_def_name
         self.n_rows = kwargs.get('n_rows')
         self.n_cols = kwargs.get('n_cols')
-        self.center = kwargs.get('center')
-
-        self.via_attr = kwargs.get('via_attr', {})
-        offset = kwargs.get('offset', [0, 0])
 
         self.box = kwargs.get('box')
-        if self.box is not None:
-            self.center = self.box.center()
-
         port = kwargs.get('port')
         if port is not None:
             self.box = port.box
-            self.center = port.box.center()
 
+        self.center = kwargs.get('center', None)
+
+        self.via_attr = kwargs.get('via_attr', {})
+
+        offset = kwargs.get('offset', [0, 0])
         if self.center is not None:
             self.center += offset
 
@@ -505,40 +506,61 @@ class Via:
             self._center = Coordinate(value)
         elif (isinstance(value, Box)):
             self._center = value.center()
+        elif (isinstance(value, Port)):
+            self._center = value.center()
+        elif (isinstance(value, Coordinate)):
+            self._center = value
+        elif value is None:
+            if self.box is not None:
+                self.center = self.box.center()
+            else:
+                self.center = value
         else:
             self._center = value
+            # raise ValueError(f'Invalid input value: {value}')
 
     def parse_tech_file_rules(self, tech_file_param_list):
         # Calculate required number of cols and rows based on box
         self.via_width = tech_file_param_list[self.via_width_rule_index]
         # via2via space is a list. Assume rules for W and H are equal and select first entry
-        self.via2via_space = tech_file_param_list[self.via2via_space_rule_index][0]
+        self.via2via_space = tech_file_param_list[self.via2via_space_rule_index]
         # Overwrite if given as viaAttr:
         if 'cutSpacing' in self.via_attr:
-            self.via2via_space = self.via_attr['cutSpacing'][0]
+            self.via2via_space = self.via_attr['cutSpacing']
         # via2bound space is a list. Assume rules for W and H are equal and select first entry
         self.via2bound_space = tech_file_param_list[self.via2bound_space_rule_index][0]
 
     def get_via_params(self, tech_file_param_list=None):
         via_param_list = []
-        if tech_file_param_list is not None and self.box is not None:
+        if (tech_file_param_list is not None):
             self.parse_tech_file_rules(tech_file_param_list)
-            via_unit_width = self.via_width + self.via2via_space
-            self.n_cols = int((self.box.w() - self.via_width - 2*self.via2bound_space) / via_unit_width) + 1
-
-            self.n_rows = int((self.box.h() - self.via_width - 2*self.via2bound_space) / via_unit_width) + 1
+            if self.box is not None and self.n_rows is None and self.n_cols is None:
+                self.determine_rows_and_cols()
+                if type(self).adjust_callback is not None: # Use external / custom function to adjust vias.
+                    if type(self).adjust_callback(self):
+                        self.determine_rows_and_cols()
+            else:
+                if type(self).adjust_callback is not None: # Use external / custom function to adjust vias.
+                    type(self).adjust_callback(self)
 
         via_param_list = [
             ["cutRows", self.n_rows],
             ["cutColumns", self.n_cols],
             ]
+        
+        if (hasattr(self, 'via2via_space')):
+            via_param_list.append(["cutSpacing", self.via2via_space])
 
         for key, value in self.via_attr.items():
             via_param_list.append([key, value])
 
         return via_param_list
+        
+    def determine_rows_and_cols(self):
+        via_unit_width = self.via_width + self.via2via_space[0]
+        self.n_cols = int((self.box.w - self.via_width - 2*self.via2bound_space) / via_unit_width) + 1
 
-
+        self.n_rows = int((self.box.h - self.via_width - 2*self.via2bound_space) / via_unit_width) + 1
 
 class Port:
     """

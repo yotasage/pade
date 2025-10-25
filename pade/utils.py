@@ -97,6 +97,45 @@ def num2string(val, asint=False, decimals=16, nodot=False):
         numstring = f'{val:{width}.{precision}}' + prefix
     return numstring
 
+def num2nano(val, asint=True, decimals=0, nodot=False):
+    """
+    Convert a number to nanometers as a string with 'n' as the separator if nodot=True.
+
+    Args:
+        val (float or None): value in meters (or base units)
+        asint (bool): whether to round to integer
+        decimals (int): number of fractional digits if asint=False
+        nodot (bool): if True, the 'n' acts as the dot separator
+
+    Returns:
+        str: value in nanometers
+    """
+    if val is None:
+        return None
+
+    # Convert to nanometers
+    val_nano = val * 1e9
+
+    if asint:
+        # Round to integer
+        val_str = str(int(round(val_nano)))
+        return val_str + 'n'
+    
+    if nodot:
+        val0 = int(val_nano)
+        val1 = val_nano - val0
+        val1 = round(val1 * 10**decimals)
+        val_str = f"{val0}n"  # 'n' acts as the dot
+        if val1 != 0:
+            val1_str = str(val1)
+            while len(val1_str) < decimals:
+                val1_str = '0' + val1_str
+            val_str += val1_str
+        return val_str
+
+    # Normal floating formatting
+    val_str = f"{val_nano:.{decimals}f}n"
+    return val_str
 
 def string2num(s_val):
 

@@ -3,6 +3,9 @@ from typing import Iterable, Union
 
 # TODO: Add support for DBU and units
 class Coordinate:
+
+    DBU = 0.001
+
     # Manual immutability
     __slots__ = ("_x", "_y")  # optional, but makes instances smaller and faster
 
@@ -13,7 +16,7 @@ class Coordinate:
             _x, _y = float(args[0]), float(args[1])
         elif len(args) == 1:
             arg = args[0]
-            if isinstance(arg, Coordinate):
+            if isinstance(arg, Coordinate) or (hasattr(arg, "x") and hasattr(arg, "y")):
                 _x, _y = float(arg.x), float(arg.y)
             elif hasattr(arg, "__getitem__") and len(arg) == 2:
                 _x, _y = float(arg[0]), float(arg[1])
@@ -38,11 +41,11 @@ class Coordinate:
     def __setattr__(self, name, value):
         raise AttributeError(f"{self.__class__.__name__} is immutable")
 
-    def to_skill(self, decimals=3):
-        return f"{round(self.x, decimals)}:{round(self.y, decimals)}"
+    def to_skill(self, decimals=0):
+        return f"{round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU}:{round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU}"
 
-    def to_list(self, decimals=3):
-        return [np.round(self.x, decimals=decimals), np.round(self.y, decimals=decimals)]
+    def to_list(self, decimals=0):
+        return [np.round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU, np.round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU]
 
     def __iter__(self):
         return iter((self._x, self._y))
@@ -73,6 +76,8 @@ class Coordinate:
             return self.__class__(self._x + other._x, self._y + other._y)
         elif hasattr(other, "__getitem__"):
             return self.__class__(self._x + other[0], self._y + other[1])
+        elif hasattr(other, "x") and hasattr(other, "y"):
+            return self.__class__(self._x + other.x, self._y + other.y)
         else:
             return self.__class__(self._x + other, self._y + other)
 
@@ -81,6 +86,8 @@ class Coordinate:
             return self.__class__(self._x - other._x, self._y - other._y)
         elif hasattr(other, "__getitem__"):
             return self.__class__(self._x - other[0], self._y - other[1])
+        elif hasattr(other, "x") and hasattr(other, "y"):
+            return self.__class__(self._x - other.x, self._y - other.y)
         else:
             return self.__class__(self._x - other, self._y - other)
         
@@ -140,7 +147,10 @@ class Coordinate:
         return self.__class__(self.x + dx, self.y + dy)
     
     @classmethod
-    def midpoint(cls, a: 'Coordinate', b: 'Coordinate'):
+    def midpoint(cls, a, b):
+        a = Coordinate(a)
+        b = Coordinate(b)
+
         return cls.avg([a, b])
     
     @classmethod

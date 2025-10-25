@@ -212,6 +212,8 @@ class Route:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
             self._add_via(via)
 
+    add_via_stop = add_via_end # Alias that is more intuitive with respect to what the endpoint is actually called.
+
     def _add_via(self, via):
         self.via_list.append(via)
 

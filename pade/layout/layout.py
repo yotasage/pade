@@ -216,7 +216,7 @@ class LayoutItem:
 
     def instantiate(self, lay_class, cell, build, **kwargs):
         """
-        Instantiate component. I build is True, the component will be built using the constructor, otherwise only instantiated from library
+        Instantiate component. If build is True, the component will be built using the constructor, otherwise only instantiated from library
         """
         if build:
             lay_item = lay_class(cell, build_list = [], **kwargs)
@@ -730,6 +730,8 @@ class LayoutInstance:
         '''
         axis specifies which axis to align along. Default is -1, which means both axes.
         '''
+        c0 = Coordinate(c0)
+        c1 = Coordinate(c1)
 
         if axis == 0: translation = Vector([c0.x, 0], [c1.x, 0])
         elif axis == 1: translation = Vector([0, c0.y], [0, c1.y])
@@ -991,6 +993,29 @@ class LayoutInstance:
             
             attr_list = [getattr(self, key) for key in match_list]
             return attr_list
+        else:
+            return []
+        
+    def get_properties_dict_match(self, pattern):
+        """
+        Returns the properties that match the given regex pattern.
+        """
+        if not self.inst.prop is None:
+            match_list = [p.name for p in self.inst.prop if re.match(pattern, p.name)]
+            attr_list = {key: getattr(self, key) for key in match_list}
+
+            return attr_list
+        else:
+            return {}
+        
+    def get_property_names_match(self, pattern):
+        """
+        Returns the names of the properties that match the given regex pattern.
+        """
+        if not self.inst.prop is None:
+            match_list = [p.name for p in self.inst.prop if re.match(pattern, p.name)]
+            
+            return match_list
         else:
             return []
 

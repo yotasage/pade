@@ -8,6 +8,7 @@ class Box:
 
     The absolute position of origin will be handled by Pattern when the box is added to it
     """
+
     def __init__(self, *args, **kwargs) -> None:
         if len(args) == 1:
             # Assume args is [[x0, y0], [x1, y1]]
@@ -270,7 +271,7 @@ class Box:
     def center_bottom(self):
         return self.lower_left() + (self.w/2, 0)
 
-    def to_list(self, decimals=3):
+    def to_list(self, decimals=0):
         return [self.origin.to_list(decimals=decimals), self.opposite_corner().to_list(decimals=decimals)]
 
     def set_origin(self, **kwargs):

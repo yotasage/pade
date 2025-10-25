@@ -183,7 +183,7 @@ class Spectre(object):
         display(f'Simulating: {self.sim_name}')
         log_file = to_path(self.log_dir, 'spectre_sim.log')
         # Progress bar
-        self.tq = tqdm(total=100, leave=False, position=self.tqdm_pos)
+        self.tq = tqdm(total=100, leave=False, position=self.tqdm_pos, bar_format='{desc} ({percentage:3.2f}%) |{bar}| [{elapsed}<{remaining}]')
         with open(log_file, 'wb') as f:
             process = subprocess.Popen(popen_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
             p0 = 0
@@ -232,6 +232,26 @@ class SpectreError(Exception):
     def __str__(self):
         return self.message
 
+
+def _extract_tran_time(line_s: str) -> str | None:
+    """Return a display-ready transient time like '151.33 ns' if found, else None."""
+    # Ex1: ... time = <number><space><unit> ...
+    m = re.search(
+        r'time\s*=\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\b',
+        line_s
+    )
+    if m:
+        return f"{m.group(1)} {m.group(2)}"
+    # Ex2: <number><space><unit> / <total> ...
+    m = re.search(
+        r'^\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\s*/',
+        line_s
+    )
+    if m:
+        return f"{m.group(1)} {m.group(2)}"
+    return None
+
+
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
         # Build spectre command
         popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} -f psfascii -log -ahdllibdir {simulation_raw_dir} "
@@ -241,39 +261,86 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         display(f'Starting spectre simulation.\nCommand: {popen_cmd}')
         log_file = to_path(log_dir, 'spectre_sim.log')
         # Progress bar
-        tq = tqdm(total=100, leave=False, position=tqdm_pos)
-        with open(log_file, 'wb') as f:
-            process = subprocess.Popen(popen_cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
-            p0 = 0
-            line_s = None
-            for line in iter(process.stdout.readline, b''):
-                f.write(line)
-                try:
-                    line_s = line.decode('ascii')
-                except:
-                    pass
-                # Only write time info to console
-                progress_line = re.search('\(.* %\)', line_s)
+        tq = tqdm(total=100, leave=False, position=tqdm_pos, bar_format='{desc} ({percentage:3.2f}%) |{bar}| [{elapsed}<{remaining}]')
+        
+        current_analysis = None
+        time_extracted = False
+        p0 = 0
+
+        process = subprocess.Popen(
+            popen_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            shell=True,
+            bufsize=1,
+            text=True,                # same as universal_newlines=True
+            encoding='utf-8',
+            errors='replace'          # never crash on odd bytes
+        )
+
+        with open(log_file, 'w', encoding='utf-8', errors='replace') as f:
+
+            saw_output = False
+            for line_s in process.stdout:
+                saw_output = True
+                f.write(line_s)
+
+                # Detect analysis type from header lines
+                analysis_decl = re.search(r"Analysis\s+`(\w+)'", line_s)
+                if analysis_decl and "iteration" not in line_s.lower():
+                    current_analysis = analysis_decl.group(1)
+
+                # Match progress percentage e.g. "(2.58 %)" or "(4.01%)"
+                progress_line = re.search(r'\((\d+\.\d+)\s?%\)', line_s)
                 if progress_line:
-                    progress = float(line_s.split(' %')[0].split('(')[1])
-                    analysis = line_s.split(':')[0].strip()
-                    if not analysis in ['ac', 'tran', 'noise', 'stb', 'dc', 'montecarlo_ac', 'montecarlo_tran', 'montecarlo_noise', 'montecarlo_stb', 'montecarlo_dc']:
+                    try:
+                        progress = float(progress_line.group(1))
+                        
+                        # Try to extract analysis from line prefix
+                        analysis_match = re.match(r'^\s*(\w+):', line_s)
+                        if analysis_match:
+                            analysis = analysis_match.group(1)
+                        else:
+                            analysis = current_analysis if current_analysis else "unknown"
+
+                        # Validate analysis only if it's in known list
+                        # known_analyses = [
+                        #     'ac', 'tran', 'noise', 'stb', 'dc',
+                        #     'montecarlo_ac', 'montecarlo_tran',
+                        #     'montecarlo_noise', 'montecarlo_stb',
+                        #     'montecarlo_dc'
+                        # ]
+                        # if analysis not in known_analyses:
+                        #     analysis = "unknown"
+                            
+                        
+                        # If it's transient (analysis contains 'tran'), extract and remember current time
+                        is_tran = ('tran' in (analysis or '').lower()) or ('tran' in (current_analysis or '').lower())
+                        if is_tran:
+                            time_str = _extract_tran_time(line_s)
+                            if time_str:
+                                last_tran_time = time_str
+                                time_extracted = True
+
+                        # Update progress bar and description
+                        tq.update(progress - p0)
+                        
+                        if is_tran and time_extracted:
+                            tq.set_description_str(f'{sim_name} {analysis} {corner.name} t={last_tran_time}')
+                        else:
+                            tq.set_description_str(f'{sim_name} {analysis} {corner.name}')
+
+                        p0 = progress
+                    except ValueError:
                         continue
-                    tq.update(progress-p0)
-                    tq.set_description(f'{sim_name} {analysis} {corner.name}')
-                    p0 = progress
-                    # Close tq
-            tq.close()
-            if line_s is None:
-                fatal('Spectre simulation did not return any output')
-            try:
-                status_list = line_s.split(' ')
-                err_idx = int([i for i in range(0, len(status_list)) if "error" in status_list[i]][0])-1
-                errors = int(status_list[err_idx])
-            except:
-                errors = True
-            if errors:
-                raise SpectreError(log_file)
+
+        tq.close()
+        if not saw_output:
+            fatal('Spectre simulation did not return any output')
+
+        process.wait()
+        if process.returncode != 0:
+            raise SpectreError(log_file)
 
         display("SPECTRE SIMULATION COMPLETE")
         display(f"Raw data directory: {simulation_raw_dir}")

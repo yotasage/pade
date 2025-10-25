@@ -7,6 +7,7 @@ name = "pade"
 version = "0.0.1"
 authors = [
   { name="Fredrik Feyling", email="fredrik.feyling@hotmail.com" },
+  { name="Jonathan Sæthre Ege", email="jonathan.s.ege@ntnu.no" },
 ]
 description = "Python based Analog Design Environment"
 readme = "README.md"

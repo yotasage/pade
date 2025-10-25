@@ -2,7 +2,7 @@
 This file demonstrate how to declare a new testbench
 """
 from schematic import Design
-from examples.comopnents.amplifiers import amp
+from examples.components.amplifiers import amp
 from stdlib.analog_lib import vdc, vsin, res
 
 class tb_amplifier(Design):

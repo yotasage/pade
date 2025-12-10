@@ -511,8 +511,11 @@ class LayoutInstance:
         mos.get_transform_property(f'G{mos_type}1') -> Coordinate(0.715,15.34)
         '''
         allowed = self.get_property_name_list()
-        if key not in allowed:
+
+        if (allowed is not None) and (key not in allowed):
             raise KeyError(f"{key!r} is not a valid key for {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
+        else:
+            print(f"Properties list equals None for lib_name: {self.lib_name} | cell_name: {self.cell_name} | instance_name: {self.name} | {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
         return getattr(self, key)
 
     def __getattr__(self, item):
@@ -596,7 +599,12 @@ class LayoutInstance:
     
     def get_property_name_list(self):
         property_name_list = []
-        for p in self.inst.prop:
+        props = self.inst.prop
+
+        if props is None:
+            return None
+
+        for p in props:
             property_name_list.append(p.name)
         return property_name_list
     

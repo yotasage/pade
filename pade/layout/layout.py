@@ -407,6 +407,8 @@ class LayoutItem:
             self.open_layoutview()
         # Use tech file to find via rules
         via_def_id = self.ws.tech.find_via_def_by_name(self.tech_file, via.via_def_name)
+        if via_def_id is None:
+            raise RuntimeError(f'Found no via_def_id for Via of type: {via.via_def_name}')
         via_params = via.get_via_params(self.ws.db.get(via_def_id, 'params'))
         self.ws.db.create_via(self.cell_view, via_def_id, via.center.to_list(), "R0", via_params)
 

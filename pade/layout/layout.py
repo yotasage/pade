@@ -847,7 +847,8 @@ class LayoutInstance:
     
     @center.setter   #property-name.setter decorator
     def center(self, value):
-        translation = Vector(self.box.center(), value)
+        center = Coordinate(value)
+        translation = Vector(self.box.center(), center)
         self.translate(translation)
 
     def edit_cdf_param(self, cdf_param_name, value):

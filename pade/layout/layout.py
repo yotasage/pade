@@ -725,6 +725,10 @@ class LayoutInstance:
     def translate(self, translation):
         self.origin = self.get_inst_origin() + translation
 
+    def move(self, dx, dy):
+        translation = Vector(self.box.center(), self.box.center() + Coordinate(x=dx, y=dy))
+        self.translate(translation)
+
     def align_top(self, other, margin=0.0, parent=None):
         """
         Place self on top of other with specified margin

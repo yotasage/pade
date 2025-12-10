@@ -94,7 +94,7 @@ class Route:
         elif isinstance(start, Path):
             self.start = start.get_box().center()
             self.layer = start.layer
-            self.width = min(start.get_box().w(), start.get_box().h())
+            self.width = min(start.get_box().w, start.get_box().h)
         elif isinstance(start, Box):
             self.start = start.center()
         elif isinstance(start, Route):

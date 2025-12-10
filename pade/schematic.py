@@ -490,7 +490,7 @@ class Cell:
         if not isinstance(terminal, str):
             raise ValueError('Terminal name must be a string')
         elif not terminal in self.terminals:
-            raise ValueError('No terminal named {} exist in cell {}'.format(terminal, self.instance_name))
+            raise ValueError('No terminal named {} exist in cell {}'.format(terminal, self.get_name_from_top()))
         else:
             return self.terminals[terminal]
 

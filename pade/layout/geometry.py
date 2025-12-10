@@ -146,6 +146,12 @@ class Coordinate:
             
         return self.__class__(self.x + dx, self.y + dy)
     
+    def dx(self, dx=0):         
+        return self.__class__(self.x + dx, self.y)
+    
+    def dy(self, dy=0):         
+        return self.__class__(self.x, self.y + dy)
+
     @classmethod
     def midpoint(cls, a, b):
         a = Coordinate(a)

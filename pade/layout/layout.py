@@ -164,7 +164,7 @@ class LayoutItem:
                 new_diag = box.diagonal - Vector([0, 2*margin])
             else:
                 new_diag = box.diagonal - Vector([2*margin, 0])
-            center = box.center()
+            center = box.center
             new_box = Box(center=center, diagonal=new_diag)
             via = Via(via_def_name, box=new_box, via_attr=via_attr)
             self.add_via(via)
@@ -402,14 +402,32 @@ class LayoutItem:
         #     # Assign the net to the path seg
         #     self.ws.db.add_fig_to_net(path_id, net)
 
+    def get_via_tech_file_param_list(self, via_def_name):
+        via_def_id = self.ws.tech.find_via_def_by_name(self.tech_file, via_def_name)
+        if via_def_id is None:
+            raise RuntimeError(f'Found no via_def_id for Via of type: {via_def_name}')
+        tech_file_param_list = self.ws.db.get(via_def_id, 'params')
+        return tech_file_param_list
+    
+    def get_via_params(self, via):
+        # via_def_id = self.ws.tech.find_via_def_by_name(self.tech_file, via.via_def_name)
+        # if via_def_id is None:
+        #     raise RuntimeError(f'Found no via_def_id for Via of type: {via.via_def_name}')
+        # tech_file_param_list = self.ws.db.get(via_def_id, 'params')
+        tech_file_param_list = self.get_via_tech_file_param_list(via.via_def_name)
+        via_params = via.get_via_params(tech_file_param_list)
+        return via_params
+
     def print_via(self, via):
         if self.cell_view is None:
             self.open_layoutview()
         # Use tech file to find via rules
         via_def_id = self.ws.tech.find_via_def_by_name(self.tech_file, via.via_def_name)
-        if via_def_id is None:
-            raise RuntimeError(f'Found no via_def_id for Via of type: {via.via_def_name}')
-        via_params = via.get_via_params(self.ws.db.get(via_def_id, 'params'))
+        # if via_def_id is None:
+        #     raise RuntimeError(f'Found no via_def_id for Via of type: {via.via_def_name}')
+        # via_params = via.get_via_params(self.ws.db.get(via_def_id, 'params'))
+        via_params = self.get_via_params(via)
+
         self.ws.db.create_via(self.cell_view, via_def_id, via.center.to_list(), "R0", via_params)
 
     def print_port(self, port):
@@ -726,7 +744,7 @@ class LayoutInstance:
         self.origin = self.get_inst_origin() + translation
 
     def move(self, dx, dy):
-        translation = Vector(self.box.center(), self.box.center() + Coordinate(x=dx, y=dy))
+        translation = Vector(self.box.center, self.box.center + Coordinate(x=dx, y=dy))
         self.translate(translation)
 
     def align_top(self, other, margin=0.0, parent=None):
@@ -761,7 +779,7 @@ class LayoutInstance:
         otherbox = other.box
         if parent:
             otherbox = Box(parent.transform_bbox(other.box.to_list()))
-        translation = Vector(self.box.center(), [otherbox.center()[0], self.box.center()[1]])
+        translation = Vector(self.box.center, [otherbox.center[0], self.box.center[1]])
         self.translate(translation)
 
     def align_vcenter(self, other, parent=None):
@@ -772,7 +790,7 @@ class LayoutInstance:
         otherbox = other.box
         if parent:
             otherbox = Box(parent.transform_bbox(other.box.to_list()))
-        translation = Vector(self.box.center(), [self.box.center()[0], otherbox.center()[1]])
+        translation = Vector(self.box.center, [self.box.center[0], otherbox.center[1]])
         self.translate(translation)
 
     def align_below(self, other , margin=0.0, parent=None):
@@ -847,12 +865,12 @@ class LayoutInstance:
 
     @property
     def center(self) -> Coordinate:
-        return self.box.center()
+        return self.box.center
     
     @center.setter   #property-name.setter decorator
     def center(self, value):
         center = Coordinate(value)
-        translation = Vector(self.box.center(), center)
+        translation = Vector(self.box.center, center)
         self.translate(translation)
 
     def edit_cdf_param(self, cdf_param_name, value):
@@ -912,7 +930,7 @@ class LayoutInstance:
         return [Box(self.transform_bbox(s.b_box)) for s in shape_list]
 
     def get_top_bbox_by_net_name(self, net_name):
-        y_center = lambda box: box.center()[1]
+        y_center = lambda box: box.center[1]
         area = lambda box: box.area()
         shape_list = self.get_shape_bbox_list_by_net_name(net_name)
         shape_list.sort(key=area, reverse=True)
@@ -920,7 +938,7 @@ class LayoutInstance:
         return shape_list[0]
 
     def get_bottom_bbox_by_net_name(self, net_name):
-        y_center = lambda box: box.center()[1]
+        y_center = lambda box: box.center[1]
         area = lambda box: box.area()
         shape_list = self.get_shape_bbox_list_by_net_name(net_name)
         shape_list.sort(key=area, reverse=True)
@@ -928,7 +946,7 @@ class LayoutInstance:
         return shape_list[0]
 
     def get_right_bbox_by_net_name(self, net_name):
-        x_center = lambda box: box.center()[0]
+        x_center = lambda box: box.center[0]
         area = lambda box: box.area()
         shape_list = self.get_shape_bbox_list_by_net_name(net_name)
         shape_list.sort(key=area, reverse=True)
@@ -936,7 +954,7 @@ class LayoutInstance:
         return shape_list[0]
 
     def get_left_bbox_by_net_name(self, net_name):
-        def x_center(box): return box.center()[0]
+        def x_center(box): return box.center[0]
         area = lambda box: box.area()
         shape_list = self.get_shape_bbox_list_by_net_name(net_name)
         shape_list.sort(key=area, reverse=True)

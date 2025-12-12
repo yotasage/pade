@@ -75,6 +75,8 @@ class Box:
 
         else:
             raise ValueError('Invalid arguments for Box')
+        
+        self._update_center()
 
 
     def __str__(self) -> str:
@@ -256,8 +258,23 @@ class Box:
     def lower_right(self):
         return Coordinate((self.x_max(), self.y_min()))
 
-    def center(self):
-        return self.origin + self.diagonal/2
+    @property
+    def center(self) -> Coordinate:
+        # return self.origin + self.diagonal/2
+        return self._center
+
+    @center.setter   #property-name.setter decorator
+    def center(self, value):
+        self.set_center(value, in_place=True)
+
+    def _update_center(self):
+        self._center = self.origin + self.diagonal/2
+
+    def set_center(self, center, in_place=False):
+        translation = Vector(self.center, center)
+        new_box = self.translate(translation, in_place=in_place)
+        self._update_center()
+        return new_box
 
     def center_left(self):
         return self.lower_left() + (0, self.h/2)
@@ -283,11 +300,7 @@ class Box:
             y0 = center[1] - self.diagonal[1]/2
             self.origin = Coordinate((x0, y0))
 
-    def set_center(self, center, in_place=False):
-        translation = Vector(self.center(), center)
-        new_box = self.translate(translation, in_place=in_place)
-        return new_box
-
+        self._update_center()
 
     def area(self):
         return np.abs(self.diagonal[0] * self.diagonal[1])
@@ -300,6 +313,9 @@ class Box:
         """
         box = self if in_place else copy.deepcopy(self)
         box.origin = box.origin+translation
+
+        box._update_center()
+
         return box
 
     def rotate(self, angle, rotate_origin=False, in_place=False):
@@ -316,6 +332,9 @@ class Box:
             origin = o_vec.rotate(angle).to_coordinate()
         box.origin = origin
         box.diagonal = new_diag
+
+        box._update_center()
+
         return box
 
 class Pattern:

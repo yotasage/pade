@@ -86,36 +86,36 @@ class Route:
         self.cvia_cols = kwargs.get('cvia_cols') # Corner vias direction
         if isinstance(start, Port):
             # If port, use center
-            self.start = start.box.center()
+            self.start = start.box.center
             self.start_port = start
             # Use start port box width(height) as routing width
             self.width = min(start.box.w, start.box.h)
             self.layer = start.layer
         elif isinstance(start, Path):
-            self.start = start.get_box().center()
+            self.start = start.get_box().center
             self.layer = start.layer
             self.width = min(start.get_box().w, start.get_box().h)
         elif isinstance(start, Box):
-            self.start = start.center()
+            self.start = start.center
         elif isinstance(start, Route):
-            self.start = start.path_list[0].get_box().center()
+            self.start = start.path_list[0].get_box().center
         else:
             self.start = Coordinate(start)
 
         if isinstance(stop, Port):
             # If port, use center
-            self.stop = stop.box.center()
+            self.stop = stop.box.center
             self.end_port = stop
             if self.width is None or self.layer is None:
                 # Use stop port box width(height) as routing width
                 self.width = min(stop.box.w, stop.box.h)
                 self.layer = stop.layer
         elif isinstance(stop, Path):
-            self.stop = stop.get_box().center()
+            self.stop = stop.get_box().center
         elif isinstance(stop, Route):
-            self.stop = stop.path_list[0].get_box().center()
+            self.stop = stop.path_list[0].get_box().center
         elif isinstance(stop, Box):
-            self.stop = stop.center()
+            self.stop = stop.center
         else:
             self.stop = Coordinate(stop)
 
@@ -185,14 +185,7 @@ class Route:
 
     def add_via_start(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
         p = self.path_list[0]
-        if p.begin_style == 'extend':
-            center = p.start
-        elif p.begin_style == 'truncate':
-            # direction = Vector(p.start, p.stop).normalize()
-            # center = p.start + direction*(p.width/2)
-            center = p.start
-        else:
-            raise ValueError(f'Unknown path begin style: {p.begin_style}')
+        center = p.start
 
         for via_name in via_name_list:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
@@ -200,13 +193,7 @@ class Route:
 
     def add_via_end(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
         p = self.path_list[-1]
-        if p.end_style == 'extend':
-            center = p.stop
-        elif p.end_style == 'truncate':
-            direction = Vector(p.start, p.stop).normalize()
-            center = p.stop - direction*(p.width/2)
-        else:
-            raise ValueError(f'Unknown path end style: {p.end_style}')
+        center = p.stop
 
         for via_name in via_name_list:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
@@ -462,6 +449,12 @@ class Via:
     # Class-level callback (shared by all instances)
     adjust_callback: ClassVar[Optional[Callable[['Via'], bool]]] = None
 
+    # Index of via spacing rules in tech file parameter list
+    # Might be tech-dependent?
+    via_width_rule_index = 1
+    via2via_space_rule_index = 5
+    via2bound_space_rule_index = 6
+
     @staticmethod
     def find_via_def_name_from_layer_name(tech_file, layer1_name, layer2_name):
         for via_def in tech_file.via_defs:
@@ -486,12 +479,6 @@ class Via:
         if self.center is not None:
             self.center += offset
 
-        # Index of via spacing rules in tech file parameter list
-        # Might be tech-dependent?
-        self.via_width_rule_index = 1
-        self.via2via_space_rule_index = 5
-        self.via2bound_space_rule_index = 6
-
     def __str__(self) -> str:
         return f"Via {self.via_def_name} with {self.n_rows} rows and {self.n_cols} columns"
 
@@ -514,28 +501,38 @@ class Via:
             self._center = value
         elif value is None:
             if self.box is not None:
-                self.center = self.box.center()
+                self.center = self.box.center
             else:
                 self.center = value
         else:
             self._center = value
             # raise ValueError(f'Invalid input value: {value}')
 
-    def parse_tech_file_rules(self, tech_file_param_list):
+    @staticmethod
+    def parse_tech_file_rules(tech_file_param_list):
+        via_width = tech_file_param_list[Via.via_width_rule_index]
+        via2via_space = tech_file_param_list[Via.via2via_space_rule_index]
+        via2bound_space = tech_file_param_list[Via.via2bound_space_rule_index][0]
+
+        return via_width, via2via_space, via2bound_space
+
+    def set_via_param_from_tech_file_rules(self, tech_file_param_list):
+        via_width, via2via_space, via2bound_space = Via.parse_tech_file_rules(tech_file_param_list)
+
         # Calculate required number of cols and rows based on box
-        self.via_width = tech_file_param_list[self.via_width_rule_index]
+        self.via_width = via_width
         # via2via space is a list. Assume rules for W and H are equal and select first entry
-        self.via2via_space = tech_file_param_list[self.via2via_space_rule_index]
+        self.via2via_space = via2via_space
         # Overwrite if given as viaAttr:
         if 'cutSpacing' in self.via_attr:
             self.via2via_space = self.via_attr['cutSpacing']
         # via2bound space is a list. Assume rules for W and H are equal and select first entry
-        self.via2bound_space = tech_file_param_list[self.via2bound_space_rule_index][0]
+        self.via2bound_space = via2bound_space
 
     def get_via_params(self, tech_file_param_list=None):
         via_param_list = []
         if (tech_file_param_list is not None):
-            self.parse_tech_file_rules(tech_file_param_list)
+            self.set_via_param_from_tech_file_rules(tech_file_param_list)
             if self.box is not None and self.n_rows is None and self.n_cols is None:
                 self.determine_rows_and_cols()
                 if type(self).adjust_callback is not None: # Use external / custom function to adjust vias.
@@ -579,21 +576,21 @@ class Port:
             self.layer = route.layer
             path = route.path_list[0]
             self.box = path.get_box()
-            self.position = self.box.center()
+            self.position = self.box.center
         elif len(args) == 1 and isinstance(args[0], Path):
             path = args[0]
             self.layer = path.layer
             self.box = path.get_box()
-            self.position = self.box.center()
+            self.position = self.box.center
         elif len(args) == 1 and isinstance(args[0], Port):
             port = args[0]
             self.layer = port.layer
             self.box = port.box
-            self.position = self.box.center()
+            self.position = self.box.center
         elif len(args) == 2 and isinstance(args[-1], Box):
             self.layer = args[0]
             self.box = copy.deepcopy(args[-1])
-            self.position = self.box.center()
+            self.position = self.box.center
         elif len(args) == 2 and not isinstance(args[-1], Box):
             self.layer = args[0]
             self.position = args[1]
@@ -630,14 +627,14 @@ class Port:
 
     @property
     def x(self) -> float:
-        return self.box.center().x
+        return self.box.center.x
     
     @property
     def y(self) -> float:
-        return self.box.center().y
+        return self.box.center.y
     
     def center(self) -> Coordinate:
-        return self.box.center()
+        return self.box.center
 
     def translate(self, translation):
         self.position += translation

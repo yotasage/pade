@@ -42,9 +42,9 @@ class Coordinate:
         raise AttributeError(f"{self.__class__.__name__} is immutable")
 
     def to_skill(self, decimals=0):
-        return f"{round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU}:{round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU}"
+        return f"{round(self.x/Coordinate.DBU, decimals)*Coordinate.DBU}:{round(self.y/Coordinate.DBU, decimals)*Coordinate.DBU}"
 
-    def to_list(self, decimals=0):
+    def as_list(self, decimals=0):
         return [np.round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU, np.round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU]
 
     def __iter__(self):
@@ -53,8 +53,12 @@ class Coordinate:
     def __len__(self):
         return 2
 
-    def tuple(self):
+    def as_tuple(self):
+        """Return the coordinate as an (x, y) tuple."""
         return (self.x, self.y)
+    
+    tuple = as_tuple
+    to_list = as_list
 
     def __round__(self, ndigits=0):
         return self.__class__((round(self._x, ndigits), round(self._y, ndigits)))
@@ -68,8 +72,10 @@ class Coordinate:
             return self.x
         elif item == 1:
             return self.y
+        elif isinstance(item, slice):
+            return (self.x, self.y)[item]
         else:
-            raise ValueError(f'{item} is an invalid index for Coordinate. The index must be 0 or 1.')
+            raise IndexError(f'{item} is an invalid index for Coordinate. The index must be 0, 1, or a slice.')
 
     def __add__(self, other: Union['Coordinate', tuple, list, float, int]):
         if isinstance(other, Coordinate):
@@ -103,13 +109,9 @@ class Coordinate:
         """Return the vector magnitude (Euclidean norm)."""
         return (self._x ** 2 + self._y ** 2) ** 0.5
 
-    def mag(self) -> float:
-        """Alias for abs(): vector magnitude."""
-        return abs(self)
-
-    def magnitude(self) -> float:
-        """Alias for abs(): vector magnitude."""
-        return abs(self)
+    magnitude = __abs__
+    norm = __abs__ # The length of a vector is universally called its norm, particularly the L2 norm.
+    mag = __abs__
 
     def __neg__(self):
         """Return a new Coordinate with both components negated."""
@@ -132,7 +134,13 @@ class Coordinate:
         # Since immutable, just return self
         return self
 
-    def translate(self, *args): # , dx=0.0, dy=0.0
+    def translate(self, *args, dx=None, dy=None): # , dx=0.0, dy=0.0
+        '''Moving the Coordinate by an offset vector'''
+        if dx is not None or dy is not None:
+            if dx is None: dx = 0
+            if dy is None: dy = 0
+            return Coordinate(self.x + dx, self.y + dy)
+        
         if len(args) == 2:
             dx, dy = float(args[0]), float(args[1])
         elif len(args) == 1:
@@ -146,11 +154,23 @@ class Coordinate:
             
         return self.__class__(self.x + dx, self.y + dy)
     
+    translated = translate
+    offset = translate
+
     def dx(self, dx=0):         
         return self.__class__(self.x + dx, self.y)
     
+    shift_x = dx
+    
     def dy(self, dy=0):         
         return self.__class__(self.x, self.y + dy)
+
+    shift_y = dy
+
+    def distance_to(self, other):
+        """Return Euclidean distance to another coordinate."""
+        o = Coordinate(other)
+        return abs(self - o)
 
     @classmethod
     def midpoint(cls, a, b):
@@ -160,14 +180,20 @@ class Coordinate:
         return cls.avg([a, b])
     
     @classmethod
-    def avg(cls, coords: Iterable['Coordinate']):
+    def average(cls, coords: Iterable['Coordinate']):
         if not coords:
             raise ValueError("Cannot calculate average of empty coordinate list")
     
         coords = list(coords) # supports any iterable
+        n = len(coords)
 
-        total = sum(coords[1:], coords[0])
-        return cls(total.x / len(coords), total.y / len(coords))
+        # total = sum(coords[1:], coords[0])
+        y = sum(c.y for c in coords)
+        x = sum(c.x for c in coords)
+        return cls(x / n, y / n)
+    
+    avg = average
+    centroid = average
 
 class Vector:
     """

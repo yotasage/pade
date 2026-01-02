@@ -242,8 +242,10 @@ class Vector:
     def __neg__(self):
         return Vector(-self.array)
 
-    def __len__(self):
+    def length(self):
         return np.sqrt(self[0]**2 + self[1]**2)
+    
+    len = length
 
     def __str__(self) -> str:
         return f'Vector({self[0]},{self[1]})'

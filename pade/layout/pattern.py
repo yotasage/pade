@@ -216,12 +216,12 @@ class Box:
     @property
     def x(self) -> float:
         '''x coordinate of the box's center.'''
-        return self.center().x
+        return self.center.x
     
     @property
     def y(self) -> float:
         '''y coordinate of the box's center.'''
-        return self.center().y
+        return self.center.y
 
     def opposite_corner(self):
         return self.origin + self.diagonal
@@ -270,8 +270,33 @@ class Box:
     def _update_center(self):
         self._center = self.origin + self.diagonal/2
 
+    # @property
+    # def origin(self) -> Coordinate:
+    #     return self._origin
+
+    # @origin.setter   #property-name.setter decorator
+    # def origin(self, value):
+    #     self._origin = value
+
+    # def _update_origin(self):
+    #     x0 = self.center[0] - self.diagonal[0]/2
+    #     y0 = self.center[1] - self.diagonal[1]/2
+    #     self._origin = Coordinate((x0, y0))
+
+    def set_origin(self, **kwargs):
+        if 'origin' in kwargs:
+            self.origin = Coordinate(kwargs['origin'])
+        elif 'center' in kwargs:
+            center = kwargs['center']
+            x0 = center[0] - self.diagonal[0]/2
+            y0 = center[1] - self.diagonal[1]/2
+            self.origin = Coordinate((x0, y0))
+
+        self._update_center()
+
     def set_center(self, center, in_place=False):
-        translation = Vector(self.center, center)
+
+        translation = Vector(self.center, Coordinate(center))
         new_box = self.translate(translation, in_place=in_place)
         self._update_center()
         return new_box
@@ -291,28 +316,25 @@ class Box:
     def to_list(self, decimals=0):
         return [self.origin.to_list(decimals=decimals), self.opposite_corner().to_list(decimals=decimals)]
 
-    def set_origin(self, **kwargs):
-        if 'origin' in kwargs:
-            self.origin = Coordinate(kwargs['origin'])
-        elif 'center' in kwargs:
-            center = kwargs['center']
-            x0 = center[0] - self.diagonal[0]/2
-            y0 = center[1] - self.diagonal[1]/2
-            self.origin = Coordinate((x0, y0))
-
-        self._update_center()
-
     def area(self):
         return np.abs(self.diagonal[0] * self.diagonal[1])
 
-    def translate(self, translation, in_place=False):
+    def translate(self, translation=None, in_place=False, dx=None, dy=None): # self, translation, in_place=False
         """
         Translate the box by a translation vector
         Accepts any subscriptable object as vector
         Returns the translated version of the box
         """
         box = self if in_place else copy.deepcopy(self)
-        box.origin = box.origin+translation
+
+        if dx is not None or dy is not None:
+            if dx is None: dx = 0
+            if dy is None: dy = 0
+
+            box.origin = box.origin.translate(dx=dx, dy=dy)
+
+        elif translation is not None:
+            box.origin = box.origin + translation
 
         box._update_center()
 
@@ -489,6 +511,14 @@ class Pattern:
         """
         self.box_list = pattern.get_box_list()
 
+    @property
+    def origin(self) -> Coordinate:
+        return self._origin
+
+    @origin.setter   #property-name.setter decorator
+    def origin(self, value):
+        self._origin = value
+
     def set_origin(self, origin=None):
         if origin is None:
             self.origin = self.lower_left()
@@ -525,13 +555,15 @@ class Pattern:
     def lower_right(self):
         return Coordinate((self.x_max(), self.y_min()))
 
-    def center(self):
-        """
-        Returns center defined as follows.
-        """
+    @property
+    def center(self) -> Coordinate:
         x_center = (self.x_max() + self.x_min()) / 2
         y_center = (self.y_max() + self.y_min()) / 2
         return Coordinate((x_center, y_center))
+
+    # @center.setter   #property-name.setter decorator
+    # def center(self, value):
+    #     self.set_center(value, in_place=True)      
     
     @property
     def width(self) -> float:
@@ -605,30 +637,30 @@ class Ring(Pattern):
         """
         Returns top box
         """
-        box_ymax_list = [b.center()[1] for b in self.box_list]
-        b_top = [b for b in self.get_box_list() if b.center()[1] == max(box_ymax_list)][0]
+        box_ymax_list = [b.center[1] for b in self.box_list]
+        b_top = [b for b in self.get_box_list() if b.center[1] == max(box_ymax_list)][0]
         return b_top
 
     def bottom_box(self):
         """
         Returns bottom box
         """
-        box_ymax_list = [b.center()[1] for b in self.box_list]
-        b_bot = [b for b in self.get_box_list() if b.center()[1] == min(box_ymax_list)][0]
+        box_ymax_list = [b.center[1] for b in self.box_list]
+        b_bot = [b for b in self.get_box_list() if b.center[1] == min(box_ymax_list)][0]
         return b_bot
 
     def left_box(self):
         """
         Returns left box
         """
-        box_xmax_list = [b.center()[0] for b in self.box_list]
-        b_left = [b for b in self.get_box_list() if b.center()[0] == min(box_xmax_list)][0]
+        box_xmax_list = [b.center[0] for b in self.box_list]
+        b_left = [b for b in self.get_box_list() if b.center[0] == min(box_xmax_list)][0]
         return b_left
 
     def right_box(self):
         """
         Returns right box
         """
-        box_xmax_list = [b.center()[0] for b in self.box_list]
-        b_right = [b for b in self.get_box_list() if b.center()[0] == max(box_xmax_list)][0]
+        box_xmax_list = [b.center[0] for b in self.box_list]
+        b_right = [b for b in self.get_box_list() if b.center[0] == max(box_xmax_list)][0]
         return b_right

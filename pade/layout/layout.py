@@ -42,10 +42,13 @@ class LayoutItem:
         self.property_list.append((name, value))
 
     def get_property(self, name):
-        for pname, value in self.property_list:
+        for pname, value in self.get_properties():
             if pname == name:
                 return value
 
+    def get_properties(self):
+        return self.property_list
+    
     @property
     def origin(self) -> str:
         return self._origin
@@ -225,7 +228,7 @@ class LayoutItem:
         else:
             # Check if cell_view exist
             res = self.ws.db.open_cell_view_by_type(cell.lib_name, cell.cell_name, ['layout'], ['layout'], 'r', None)
-            if not res is None:
+            if res is not None:
                 lay_inst = LayoutInstance.from_cell(cell, self)
             else:
                 lay_item = lay_class(cell, build_list = [], **kwargs)
@@ -236,13 +239,15 @@ class LayoutItem:
     # -----------------------------
     # Skill interaction functions
     # -----------------------------
+    def get_terminals(self):
+        return self.ws.db.get(self.cell_view, 'terminals')
 
     def get_cell_view_terminal(self, tname):
         """
         Get terminal of self from self's layout view
         """
         try:
-            terminals = self.ws.db.get(self.cell_view, 'terminals')
+            terminals = self.get_terminals()
             for t in terminals:
                 if t.name == tname:
                     for pin in t.pins:
@@ -351,7 +356,7 @@ class LayoutItem:
 
     def print_instance(self, instance):
         """
-        This instantiates the LayoutItem in the layout cell view. The instance ID is atored as an attribute
+        This instantiates the LayoutItem in the layout cell view. The instance ID is stored as an attribute
         """
         if self.cell_view is None:
             self.open_layoutview()
@@ -387,6 +392,8 @@ class LayoutItem:
             self.print_path(path)
         for via in route.via_list:
             self.print_via(via)
+        # for port in route.port_list:
+        #     self.print_port(port)
 
     def print_path(self, path):
         if self.cell_view is None:
@@ -446,6 +453,8 @@ class LayoutItem:
         self.ws.db.create_term( net, port.name, "inputOutput")
         self.ws.db.create_pin(net, fig)
         self.ws.db.create_label(self.cell_view, [port.layer, 'label'], port.position.to_list(), port.name, "centerCenter", "R0", "stick", font_size)
+
+        return port # Pass port through the method. Allows for it to be saved while doing a one-liner.
 
 class LayoutInstance:
     """
@@ -528,12 +537,12 @@ class LayoutInstance:
         How this had to be done previously:
         mos.get_transform_property(f'G{mos_type}1') -> Coordinate(0.715,15.34)
         '''
-        allowed = self.get_property_name_list()
+        # allowed = self.get_property_name_list()
 
-        if (allowed is not None) and (key not in allowed):
-            raise KeyError(f"{key!r} is not a valid key for {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
-        else:
-            print(f"Properties list equals None for lib_name: {self.lib_name} | cell_name: {self.cell_name} | instance_name: {self.name} | {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
+        # if (allowed is not None) and (key not in allowed):
+        #     raise KeyError(f"{key!r} is not a valid key for {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
+        # else:
+        #     print(f"Properties list equals None for lib_name: {self.lib_name} | cell_name: {self.cell_name} | instance_name: {self.name} | {', '.join(cls.__name__ for cls in self.__class__.__mro__)}")
         return getattr(self, key)
 
     def __getattr__(self, item):
@@ -598,8 +607,6 @@ class LayoutInstance:
             pass
 
         raise AttributeError(f'Failed to get {item} from {self}')
-        # TODO: Consider returning None instead of crashing everything. Though it seems like the expected behavior is for an error to be raised in these cases. Maybe implement a method that returns True if an attribute exist and False if it does not. If so, that method can be check first before running this method.
-        # return None
 
     def get_property(self, name):
         for prop in self.inst.prop:
@@ -741,9 +748,9 @@ class LayoutInstance:
         return Coordinate(self.inst.transform[0])
 
     def translate(self, translation):
-        self.origin = self.get_inst_origin() + translation
+        self.origin = Coordinate(self.get_inst_origin() + translation).aligned_to_DBU()
 
-    def move(self, dx, dy):
+    def move(self, dx=0.0, dy=0.0):
         translation = Vector(self.box.center, self.box.center + Coordinate(x=dx, y=dy))
         self.translate(translation)
 
@@ -765,9 +772,9 @@ class LayoutInstance:
         c0 = Coordinate(c0)
         c1 = Coordinate(c1)
 
-        if axis == 0: translation = Vector([c0.x, 0], [c1.x, 0])
-        elif axis == 1: translation = Vector([0, c0.y], [0, c1.y])
-        else: translation = Vector(c0, c1)
+        if (axis == 0) or (axis == '-'): translation = Vector([c0.x, 0], [c1.x, 0])
+        elif (axis == 1) or (axis == '|'): translation = Vector([0, c0.y], [0, c1.y])
+        else: translation = Vector(c0, c1) # (axis == -1) or (axis == '+')
 
         self.translate(translation)
 
@@ -903,12 +910,15 @@ class LayoutInstance:
     def get_cdf_param_list(self):
         return self.ws.cdf.get_inst_CDF(self.inst).parameters
 
+    def get_terminals(self):
+        return self.ws.db.get(self.inst.master, 'terminals')
+
     def get_pin(self, terminal_name):
         """
         Get pin of self from self's layout view
         """
         try:
-            terminals = self.ws.db.get(self.inst.master, 'terminals')
+            terminals = self.get_terminals()
             for t in terminals:
                 if t.name == terminal_name:
                     for pin in t.pins:
@@ -992,7 +1002,7 @@ class LayoutInstance:
             box_list = [p.value for p in self.inst.prop if re.match(pattern, p.name)]
             box_list = [self.transform_bbox(b) for b in box_list]
             box_list = [Box(b) for b in box_list]
-            box_list.sort(key=lambda x: x.center()[1])
+            box_list.sort(key=lambda x: x.center[1])
             return box_list
         else:
             return []

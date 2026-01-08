@@ -6,6 +6,7 @@ import numpy as np
 import copy
 from skillbridge import Workspace
 from typing import List, Callable, Optional, ClassVar
+from collections.abc import Iterable
 
 class Path:
     """
@@ -65,6 +66,9 @@ class Path:
     def set_net(self, net_name):
         self.net = net_name
 
+    def length(self):
+        return Vector(self.start, self.stop).length()
+
 
 class Route:
     """
@@ -73,8 +77,11 @@ class Route:
     def __init__(self, start, stop, how, **kwargs) -> None:
         self.path_list = []
         self.via_list = []
+        self.port_list = []
         self.width = None
         self.layer = None
+        # self.do_chop = kwargs.get('chop', False)
+        # self.chop = None # Center coordinate of chop
         self.offset = kwargs.get('offset', 0)
         self.offset_end = kwargs.get('offset_end', 0)
         self.start_port = None
@@ -180,6 +187,38 @@ class Route:
     def __getitem__(self, key):
         return self.path_list[key]
 
+    @property
+    def start(self) -> Coordinate:
+        return self._start
+    
+    @start.setter   #property-name.setter decorator
+    def start(self, value):
+        self._start = Coordinate(value)
+
+    # begin = start
+    # beginning = start
+
+    @property
+    def stop(self) -> Coordinate:
+        return self._stop
+    
+    @stop.setter   #property-name.setter decorator
+    def stop(self, value):
+        self._stop = Coordinate(value)
+
+    # end = stop
+        
+    @property
+    def beginning(self) -> Coordinate:
+        return self.path_list[0].start
+    
+    @property
+    def end(self) -> Coordinate:
+        return self.path_list[-1].stop
+    
+    # def end(self):
+    #     return self.path_list[-1].stop
+
     def add_path(self, path):
         self.path_list.append(path)
 
@@ -199,10 +238,45 @@ class Route:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
             self._add_via(via)
 
-    add_via_stop = add_via_end # Alias that is more intuitive with respect to what the endpoint is actually called.
+    add_via_begin = add_via_start
+    add_via_stop = add_via_end
 
     def _add_via(self, via):
         self.via_list.append(via)
+
+    # def add_port_start(self, name):
+    #     p = self.path_list[0]
+    #     center = p.start
+
+    #     box = p.get_box()
+    #     w = min(box.w, box.h)
+
+    #     # TODO: Place the port inside the Route in case of truncated edge. Need to consider direction.
+    #     # c0.translate(dx=w/2)
+
+    #     port_box = Box(center=center, w=w, h=w)
+    #     port = Port(name, self.layer, port_box)
+    #     self._add_port(port)
+
+    # def add_port_end(self, name):
+    #     p = self.path_list[-1]
+    #     center = p.stop
+
+    #     box = p.get_box()
+    #     w = min(box.w, box.h)
+
+    #     # TODO: Place the port inside the Route in case of truncated edge. Need to consider direction.
+    #     # c0.translate(dx=w/2)
+
+    #     port_box = Box(center=center, w=w, h=w)
+    #     port = Port(name, self.layer, port_box)
+    #     self._add_port(port)
+
+    # add_port_begin = add_port_start
+    # add_port_stop = add_port_end
+
+    # def _add_port(self, port):
+    #     self.port_list.append(port)
 
     def get_layer(self, index=0):
         if isinstance(self.layer, str):
@@ -428,7 +502,6 @@ class Route:
             if dy != 0:
                 self.add_path(Path(self.get_layer(0), c0, dy=dy, width=self.width, purpose=self.purpose))
 
-
     def handle_path_style(self, **kwargs):
         # Add begin/end styles
         if 'begin_style' in kwargs:
@@ -436,11 +509,12 @@ class Route:
         if 'end_style' in kwargs:
             self.path_list[-1].set_end_style(kwargs['end_style'])
 
-    def end(self):
-        return self.path_list[-1].stop
-
-
-
+    def length(self):
+        sum = 0
+        for p in self.path_list:
+            sum += p.length()
+        return sum
+    
 class Via:
     """
     Via. May have multiple rows and columns of vias
@@ -494,9 +568,9 @@ class Via:
         if (isinstance(value, list)):
             self._center = Coordinate(value)
         elif (isinstance(value, Box)):
-            self._center = value.center()
+            self._center = value.center
         elif (isinstance(value, Port)):
-            self._center = value.center()
+            self._center = value.center
         elif (isinstance(value, Coordinate)):
             self._center = value
         elif value is None:
@@ -573,10 +647,7 @@ class Port:
 
         if len(args) == 1 and isinstance(args[0], Route):
             route = args[0]
-            self.layer = route.layer
-            path = route.path_list[0]
-            self.box = path.get_box()
-            self.position = self.box.center
+            self._init_from_route(route, **kwargs)
         elif len(args) == 1 and isinstance(args[0], Path):
             path = args[0]
             self.layer = path.layer
@@ -595,7 +666,8 @@ class Port:
             self.layer = args[0]
             self.position = args[1]
             box_width = kwargs.get('box_width', 0.2)
-            self.box = Box(diagonal=(box_width, box_width))
+            box = kwargs.get('box', None)
+            self.box = copy.deepcopy(box) if box is not None else Box(diagonal=(box_width, box_width))
         elif len(args) == 3:
             # Assume layer, position and box
             self.layer = args[0]
@@ -603,6 +675,50 @@ class Port:
             self.box = args[2]
         else:
             raise ValueError('Invalid input arguments')
+        
+        self.box.set_origin(center=self.position)
+
+    def _init_from_route(self, route, **kwargs):
+        self.layer = route.layer
+
+        start = kwargs.get('start') or kwargs.get('begin', False)
+        stop = kwargs.get('stop') or kwargs.get('end', False)
+        edge = kwargs.get('edge', False) # If True: place the port on one of the ends of a path (start, stop), else, cover the whole path (start, stop).
+
+        if stop and not start:
+            path = route.path_list[-1]
+            if isinstance(self.layer, Iterable) and not isinstance(self.layer, (str, bytes, bytearray)): self.layer = self.layer[-1]
+
+            if edge:
+                c0 = route.stop
+                direction = Vector(path.start, path.stop).normalize()
+        else:
+            path = route.path_list[0]
+            if isinstance(self.layer, Iterable) and not isinstance(self.layer, (str, bytes, bytearray)): self.layer = self.layer[0]
+
+            if edge:
+                c0 = route.start
+                direction = Vector(path.stop, path.start).normalize()
+
+        if edge:
+            box = path.get_box()
+            w = min(box.w, box.h)
+
+            if (start and stop) or (not start and not stop):
+                raise RuntimeError(f'Which side should the port be added to?: start={start} and stop={stop}')
+            elif (stop and (path.end_style == 'extend')) or (start and (path.begin_style == 'extend')):
+                center = c0
+            elif (stop and (path.end_style == 'truncate')) or (start and (path.begin_style == 'truncate')):
+                center = c0 - direction*(w/2)
+            else:
+                raise ValueError(f'Unknown path end style: {path.end_style}')
+
+            self.box = Box(center=center, w=w, h=w)
+        else:
+            self.box = path.get_box()
+        
+        
+        self.position = self.box.center
         self.box.set_origin(center=self.position)
 
     @property
@@ -633,8 +749,16 @@ class Port:
     def y(self) -> float:
         return self.box.center.y
     
+    @property
     def center(self) -> Coordinate:
         return self.box.center
+
+    @center.setter   #property-name.setter decorator
+    def center(self, value):
+        self.box.center = value
+
+    # def center(self) -> Coordinate:
+    #     return self.box.center
 
     def translate(self, translation):
         self.position += translation

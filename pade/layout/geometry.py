@@ -18,6 +18,8 @@ class Coordinate:
             arg = args[0]
             if isinstance(arg, Coordinate) or (hasattr(arg, "x") and hasattr(arg, "y")):
                 _x, _y = float(arg.x), float(arg.y)
+            elif hasattr(arg, "box"):
+                _x, _y = float(arg.box.center.x), float(arg.box.center.y)
             elif hasattr(arg, "__getitem__") and len(arg) == 2:
                 _x, _y = float(arg[0]), float(arg[1])
             else:
@@ -41,11 +43,23 @@ class Coordinate:
     def __setattr__(self, name, value):
         raise AttributeError(f"{self.__class__.__name__} is immutable")
 
+    def aligned_to_DBU(self, decimals=0):
+        '''
+        Aligns the coordinate to the GRID / DBU. This prevents DRC errors such as (OFF GRID)
+        '''
+        x = round(self.x/Coordinate.DBU, decimals)*Coordinate.DBU
+        y = round(self.y/Coordinate.DBU, decimals)*Coordinate.DBU
+        return Coordinate(x, y)
+
     def to_skill(self, decimals=0):
-        return f"{round(self.x/Coordinate.DBU, decimals)*Coordinate.DBU}:{round(self.y/Coordinate.DBU, decimals)*Coordinate.DBU}"
+        c = self.aligned_to_DBU(decimals=decimals)
+        return f"{c.x}:{c.y}"
+        # return f"{round(self.x/Coordinate.DBU, decimals)*Coordinate.DBU}:{round(self.y/Coordinate.DBU, decimals)*Coordinate.DBU}"
 
     def as_list(self, decimals=0):
-        return [np.round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU, np.round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU]
+        c = self.aligned_to_DBU(decimals=decimals)
+        return [c.x, c.y]
+        # return [np.round(self.x/Coordinate.DBU, decimals=decimals)*Coordinate.DBU, np.round(self.y/Coordinate.DBU, decimals=decimals)*Coordinate.DBU]
 
     def __iter__(self):
         return iter((self._x, self._y))
@@ -185,6 +199,7 @@ class Coordinate:
             raise ValueError("Cannot calculate average of empty coordinate list")
     
         coords = list(coords) # supports any iterable
+        coords = [Coordinate(c) for c in coords] # Make sure that the format is correct.
         n = len(coords)
 
         # total = sum(coords[1:], coords[0])

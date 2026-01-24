@@ -4,6 +4,82 @@ import os
 import sys
 from pade import *
 from shlib.shlib import to_path, mkdir
+from typing import Iterable, Optional, Any
+
+def determine_dimensions(group: Any, dim: Optional[list[list[float]]] = None) -> list[list[float]]:
+    """
+    Compute overall bounds as [[xmin, ymin], [xmax, ymax]] for a group of items.
+    Items may expose:
+      - get_bounding_box() -> Box-like with x_min/x_max/y_min/y_max
+      - .box -> Box-like object (same methods as above)
+      - .box_list -> iterable of items to recurse into (e.g., Pattern)
+    The items may also be boxes themselves, or they can be lists of other items.
+    """
+
+    # Make sure the group is 1D
+    
+    if isinstance(group, (str, bytes)) or not hasattr(group, '__iter__'):
+        group_list = [group]
+    else: group_list = list(group)
+
+    if not group_list:
+        raise RuntimeError('Group is empty.')
+
+    if dim is None:
+        xmin = ymin = float("inf")
+        xmax = ymax = float("-inf")
+    else:
+        xmin, ymin = dim[0]
+        xmax, ymax = dim[1]
+
+    def _update_from_box(box) -> None:
+        nonlocal xmin, ymin, xmax, ymax
+        bxmin = box.x_min()
+        bxmax = box.x_max()
+        bymin = box.y_min()
+        bymax = box.y_max()
+        xmin = min(xmin, bxmin)
+        ymin = min(ymin, bymin)
+        xmax = max(xmax, bxmax)
+        ymax = max(ymax, bymax)
+    
+    for el in group_list:
+        # A method that produces a box
+        if hasattr(el, "get_bounding_box"):
+            box = el.get_bounding_box()
+            _update_from_box(box)
+
+        # A .box attribute
+        elif hasattr(el, "box"):
+            _update_from_box(el.box)
+
+        # A box
+        elif hasattr(el, "x_min"):
+            _update_from_box(el)
+
+        # An object (like Pattern) with .box_list
+        elif hasattr(el, "box_list"):
+            sub = determine_dimensions(el.box_list)
+            sxmin, symin = sub[0]
+            sxmax, symax = sub[1]
+            xmin = min(xmin, sxmin)
+            ymin = min(ymin, symin)
+            xmax = max(xmax, sxmax)
+            ymax = max(ymax, symax)
+
+        elif hasattr(el, '__iter__'):
+            sub = determine_dimensions(el)
+            sxmin, symin = sub[0]
+            sxmax, symax = sub[1]
+            xmin = min(xmin, sxmin)
+            ymin = min(ymin, symin)
+            xmax = max(xmax, sxmax)
+            ymax = max(ymax, symax)
+
+        else:
+            raise TypeError(f"Element of type {type(el).__name__} does not expose get_bounding_box(), .box, or .box_list")
+    
+    return [[xmin, ymin], [xmax, ymax]]
 
 def append_dict(d1, d2):
     """

@@ -307,6 +307,28 @@ class vpwl(CellPN):
             self.set_parameter(key, value)
 
 
+class ipwl(CellPN):
+    """
+    Arguments:
+        wave: List
+            List of time/value points
+    Terminals: p, n
+    """
+    def __init__(self, instance_name, parent_cell, wave, **kwargs):
+        # Call super init
+        super().__init__('isource', instance_name, parent_cell, declare=False, library_name="analog_lib")
+        # Add terminals
+        self.p = self.add_terminal("p")
+        self.n = self.add_terminal("n")
+        wave_str_list = [num2string(w) for w in wave]
+        # Add properties
+        wave_str = "[" + ' '.join(wave_str_list) + ']'
+        self.add_parameters({'type': 'pwl', 'wave': wave_str})
+        # Add optional properties
+        # V0 (net2 net1) vsource type=pwl wave=[ 0 0 1u 1 2u 2 ]
+        for key, value in kwargs.items():
+            self.set_parameter(key, value)
+
 
 class bsource(CellPN):
     """

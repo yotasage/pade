@@ -62,6 +62,10 @@ class Path:
             c1 = self.start - (0, self.width/2)
             c2 = self.stop + (0, self.width/2)
             return Box(origin=c1, opposite_corner=c2)
+        
+    @property
+    def box(self) -> Box:
+        return self.get_box()
 
     def set_net(self, net_name):
         self.net = net_name
@@ -80,6 +84,7 @@ class Route:
         self.port_list = []
         self.width = None
         self.layer = None
+        self.net = kwargs.get('net', None)
         # self.do_chop = kwargs.get('chop', False)
         # self.chop = None # Center coordinate of chop
         self.offset = kwargs.get('offset', 0)

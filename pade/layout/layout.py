@@ -363,6 +363,9 @@ class LayoutItem:
 
         instance_id = self.ws.db.create_inst_by_master_name(self.cell_view, instance.lib_name, instance.cell_name, 'layout', instance.instance_name, instance.origin.to_list(), instance.orientation)
 
+        if instance_id is None:
+            raise RuntimeError(f'instance_id is {instance_id} | instance_name: {instance.instance_name} | instance.cell_name: {instance.cell_name}')
+
         lay_inst = LayoutInstance(instance_id, origin=instance.origin)
 
         # Set properties from parents property list
@@ -525,6 +528,12 @@ class LayoutInstance:
 
     def __str__(self) -> str:
         return f"{self.cell_name} {self.name}"
+    
+    def __eq__(self, other):
+        # Define how two LayoutInstance instances are considered equal
+        if isinstance(other, LayoutInstance):
+            return self.cell_name == other.cell_name and self.name == other.name
+        return NotImplemented
 
     def __getitem__(self, key):
         '''
@@ -759,9 +768,7 @@ class LayoutInstance:
         Place self on top of other with specified margin
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector([self.box.x_min(), self.box.y_min()], [otherbox.x_min(), otherbox.y_max() + margin])
         self.translate(translation)
 
@@ -783,9 +790,7 @@ class LayoutInstance:
         Horisontally center self relative to other
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector(self.box.center, [otherbox.center[0], self.box.center[1]])
         self.translate(translation)
 
@@ -794,9 +799,7 @@ class LayoutInstance:
         Vertically center self relative to other
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector(self.box.center, [self.box.center[0], otherbox.center[1]])
         self.translate(translation)
 
@@ -805,9 +808,7 @@ class LayoutInstance:
         Place self below of other with specified margin
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector(
             [self.box.x_min(), self.box.y_max()],
             [otherbox.x_min(), otherbox.y_min() - margin])
@@ -818,9 +819,7 @@ class LayoutInstance:
         Place self right of other with specified margin
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector([self.box.x_min(), self.box.y_min()], [otherbox.x_max() + margin, otherbox.y_min()])
         self.translate(translation)
 
@@ -829,11 +828,24 @@ class LayoutInstance:
         Place self left of other with specified margin
         """
         # Calculate translation in y-direction
-        otherbox = other.box
-        if parent:
-            otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        otherbox = self._prepare_for_align(other, parent)
         translation = Vector([self.box.x_max(), self.box.y_min()], [otherbox.x_min() - margin, otherbox.y_min()])
         self.translate(translation)
+
+    def _prepare_for_align(self, other, parent):
+        if isinstance(other, Coordinate):
+            otherbox = Box([other, other])
+        elif isinstance(other, Box):
+            otherbox = other
+        elif hasattr(other, 'box'):
+            otherbox = other.box
+            if parent:
+                otherbox = Box(parent.transform_bbox(other.box.to_list()))
+        else:
+            raise NotImplementedError(f'Can not align to: {other}')
+
+        return otherbox
+
 
     # Optional aliases
     align_over = align_top

@@ -1,6 +1,9 @@
+from typing import Union
 from pade.layout.geometry import Coordinate, Vector
 import numpy as np
 import copy
+
+from pade.utils import determine_dimensions
 
 class Box:
     """
@@ -303,15 +306,43 @@ class Box:
 
     def center_left(self):
         return self.lower_left() + (0, self.h/2)
+    
+    def inner_center_left(self):
+        '''
+        While the center_left method returns the left center on the outer edge of the box, this method on the other hand, consideres the "width" of the box, and returns a center inside the right side of the box that is more useful with respect to routing.
+        '''
+        x = min(self.h, self.w)
+        return self.lower_left() + (x/2, self.h/2)
 
     def center_right(self):
         return self.lower_right() + (0, self.h/2)
+    
+    def inner_center_right(self):
+        '''
+        While the center_right method returns the right center on the outer edge of the box, this method on the other hand, consideres the "width" of the box, and returns a center inside the right side of the box that is more useful with respect to routing.
+        '''
+        x = min(self.h, self.w)
+        return self.lower_right() + (-x/2, self.h/2)
 
     def center_top(self):
         return self.upper_left() + (self.w/2, 0)
+    
+    def inner_center_top(self):
+        '''
+        While the center_top method returns the top center on the outer edge of the box, this method on the other hand, consideres the "width" of the box, and returns a center inside the top side of the box that is more useful with respect to routing.
+        '''
+        x = min(self.h, self.w)
+        return self.upper_left() + (self.w/2, -x/2)
 
     def center_bottom(self):
         return self.lower_left() + (self.w/2, 0)
+
+    def inner_center_bottom(self):
+        '''
+        While the center_bottom method returns the bottom center on the outer edge of the box, this method on the other hand, consideres the "width" of the box, and returns a center inside the bottom side of the box that is more useful with respect to routing.
+        '''
+        x = min(self.h, self.w)
+        return self.lower_left() + (self.w/2, x/2)
 
     def to_list(self, decimals=0):
         return [self.origin.to_list(decimals=decimals), self.opposite_corner().to_list(decimals=decimals)]
@@ -630,8 +661,23 @@ class Ring(Pattern):
     """
     Ring
     """
-    def __init__(self, pattern: Pattern) -> None:
-        super().__init__(pattern = pattern)
+    def __init__(self, pattern: Union[Pattern, None], group=[], bounding_box=None, width=14, margin=0, layer='METAL5', purpose='drawing') -> None:
+        if len(group) > 0:
+            dim = determine_dimensions(group)
+            bounding_box = Box(dim)
+        
+        if bounding_box is not None:
+            bb_pattern = Pattern(box_list=[bounding_box])
+            p1 = bb_pattern.enclosure(margin=margin)
+            p2 = bb_pattern.enclosure(margin=margin+width)
+            pattern = Pattern(layer=layer, purpose=purpose, pattern=p2-p1)
+        
+        if pattern is None:
+            raise ValueError('Pattern can not be None.')
+        
+        self.pattern = pattern
+
+        super().__init__(pattern=self.pattern)
 
     def top_box(self):
         """
@@ -640,6 +686,9 @@ class Ring(Pattern):
         box_ymax_list = [b.center[1] for b in self.box_list]
         b_top = [b for b in self.get_box_list() if b.center[1] == max(box_ymax_list)][0]
         return b_top
+    
+    upper_box = top_box
+    top = top_box
 
     def bottom_box(self):
         """
@@ -648,6 +697,11 @@ class Ring(Pattern):
         box_ymax_list = [b.center[1] for b in self.box_list]
         b_bot = [b for b in self.get_box_list() if b.center[1] == min(box_ymax_list)][0]
         return b_bot
+    
+    lower_box = bottom_box
+    bot_box = bottom_box
+    bottom = bottom_box
+    bot = bottom_box
 
     def left_box(self):
         """
@@ -656,6 +710,8 @@ class Ring(Pattern):
         box_xmax_list = [b.center[0] for b in self.box_list]
         b_left = [b for b in self.get_box_list() if b.center[0] == min(box_xmax_list)][0]
         return b_left
+    
+    left = left_box
 
     def right_box(self):
         """
@@ -664,3 +720,5 @@ class Ring(Pattern):
         box_xmax_list = [b.center[0] for b in self.box_list]
         b_right = [b for b in self.get_box_list() if b.center[0] == max(box_xmax_list)][0]
         return b_right
+
+    right = right_box

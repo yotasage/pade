@@ -678,6 +678,7 @@ class Cell:
         current_index = current_index + 1
         return f'{base}{current_col}{current_index}'
 
+    # TODO: The way this method works, it is not possible to specify that extracted netlist be used for a specific instance while at the same time schematic is used for another instance of the same type. Also, the first cell to be checked is the one that decides whether extracted netlist or schematic is used.
     def get_subckts(self, unique=True):
         """
         Returns a ordered list of all unique subckts in Cell

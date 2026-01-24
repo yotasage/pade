@@ -283,15 +283,18 @@ class LayoutItem:
         self.add_pattern(ring_pattern)
         return Ring(ring_pattern)
 
-    def get_all_instances(self, recursive=False):
+    def get_all_instances(self, recursive=False, depth=-2):
         """
-        Returns all instances in cell_vew as LayoutInstance objects
+        Returns all instances in cell_view as LayoutInstance objects
         """
-        temp_list = [LayoutInstance(i) for i in self.cell_view.instances]
         instance_list = []
+        if (depth <= -2): depth = -2 # Continue until the end.
+        elif (depth == -1): return [] # Finished
+
+        temp_list = [LayoutInstance(i) for i in self.cell_view.instances]
         if recursive:
             for inst in temp_list:
-                instance_list += inst.get_all_instances(recursive=True)
+                instance_list += inst.get_all_instances(recursive=True, depth=depth-1)
         else:
             instance_list = temp_list
         return instance_list
@@ -674,18 +677,21 @@ class LayoutInstance:
             pass
         raise ValueError(f'Property {pname} could not be converted to Coordinate or Box')
 
-    def get_all_instances(self, recursive=False):
+    def get_all_instances(self, recursive=False, depth=-2):
         """
         Returns all instances in master as LayoutInstance objects
         """
         instance_list = []
+        if (depth <= -2): depth = -2 # Continue until the end.
+        elif (depth == -1): return instance_list # Finished
+
         try:
             temp_list = [LayoutInstance(i, transform=self.transform) for i in self.master.instances]
         except:
             return [self]
         if recursive:
             for inst in temp_list:
-                temp_list = inst.get_all_instances(recursive=True)
+                temp_list = inst.get_all_instances(recursive=True, depth=depth-1)
                 if inst in temp_list:
                     inst.parent_cell = self
                     instance_list.append(inst)

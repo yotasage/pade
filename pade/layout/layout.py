@@ -630,13 +630,15 @@ class LayoutInstance:
     
     def get_property_list(self):
         property_list = []
-        for p in self.inst.prop:
-            property_list.append((p.name, p.value))
+        properties = self.get_properties()
+        if properties is not None:
+            for p in properties:
+                property_list.append((p.name, p.value))
         return property_list
     
     def get_property_name_list(self):
         property_name_list = []
-        props = self.inst.prop
+        props = self.get_properties()
 
         if props is None:
             return None

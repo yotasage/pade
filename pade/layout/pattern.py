@@ -661,7 +661,7 @@ class Ring(Pattern):
     """
     Ring
     """
-    def __init__(self, pattern: Union[Pattern, None], group=[], bounding_box=None, width=14, margin=0, layer='METAL5', purpose='drawing') -> None:
+    def __init__(self, pattern: Union[Pattern, None], group=[], bounding_box=None, width=14, margin=0.0, layer='METAL5', purpose='drawing') -> None:
         if len(group) > 0:
             dim = determine_dimensions(group)
             bounding_box = Box(dim)

@@ -8,6 +8,8 @@ from skillbridge import Workspace
 from typing import List, Callable, Optional, ClassVar
 from collections.abc import Iterable
 
+Layer = Union[int, str]
+
 class Path:
     """
     Path segment. Only straight wire in single layer
@@ -66,6 +68,10 @@ class Path:
     @property
     def box(self) -> Box:
         return self.get_box()
+    
+    @property
+    def center(self) -> Coordinate:
+        return self.box.center
 
     def set_net(self, net_name):
         self.net = net_name
@@ -73,12 +79,23 @@ class Path:
     def length(self):
         return Vector(self.start, self.stop).length()
 
-
 class Route:
     """
     Route. May contain several path segments and vias
     """
-    def __init__(self, start, stop, how, **kwargs) -> None:
+
+    # Class-level callback (shared by all instances)
+    get_layer_name: ClassVar[Optional[Callable[[Layer], str]]] = None
+    get_via_names: Optional[Callable[[Layer, Layer, bool], List[str]]] = None
+    get_via_name: Optional[Callable[[Layer, Layer, bool], str]] = None
+
+
+    # Assign as staticmethod to prevent binding to self
+    get_layer_name = staticmethod(get_layer_name)
+    get_via_names = staticmethod(get_via_names)
+    get_via_name = staticmethod(get_via_name)
+
+    def __init__(self, start, stop, how, path_len_list=[], **kwargs) -> None:
         self.path_list = []
         self.via_list = []
         self.port_list = []
@@ -135,6 +152,8 @@ class Route:
         self.width = kwargs.get('width', self.width)
         self.layer = kwargs.get('layer', self.layer)
 
+        self.validate_and_adjust_layer_names()
+
         if self.width is None or self.layer is None:
             raise ValueError('Route width and layer must be specified if start is not a Port')
 
@@ -147,10 +166,10 @@ class Route:
         elif how == '|':
             self.route_v()
         elif how == '-|-':
-            self.path_len_list = kwargs['path_len_list']
+            self.path_len_list = path_len_list
             self.route_custom_h()
         elif how == '|-|':
-            self.path_len_list = kwargs['path_len_list']
+            self.path_len_list = path_len_list
             self.route_custom_v()
         else:
             warn('Route method not recognized')
@@ -182,6 +201,30 @@ class Route:
         #     via = Via(via_name, box=self.end_port.box)
         #     self._add_via(via)
 
+    @staticmethod
+    def is_iterable_but_not_string(obj):
+        '''
+        Checks if the object is iterable and not a string.
+        '''
+        if isinstance(obj, (str, bytes)):
+            return False
+        try:
+            iter(obj)
+            return True
+        except TypeError:
+            return False
+
+
+    def validate_and_adjust_layer_names(self):
+        '''
+        Validates the provided layer names and adjusts them if that is supported by the provided callback function. That is, it should be possible to provide aliases for the layers as long as the callback supports them and returns the proper layer names.
+        '''
+        if type(self).get_layer_name is not None:
+            if type(self).is_iterable_but_not_string(self.layer):
+                for i, layer in enumerate(self.layer):
+                    self.layer[i] = type(self).get_layer_name(layer)
+            else:
+                self.layer = type(self).get_layer_name(self.layer)
 
     def __str__(self) -> str:
         return f"Route with {len(self.path_list)} Paths"
@@ -225,19 +268,56 @@ class Route:
     #     return self.path_list[-1].stop
 
     def add_path(self, path):
+        '''
+        Return the path for later use in case it is added in a one-liner like:
+        p = self.add_path(Path(self.get_layer(0), c0, dx=dx, width=self.width, purpose=self.purpose))
+        '''
         self.path_list.append(path)
+        return path
 
     def add_via_start(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
+        '''
+        Either:
+        1. Provide a list of via names.
+        2. Provide a single Layer.
+        3. Provide 2 layers.
+        '''
         p = self.path_list[0]
         center = p.start
+
+        layer = via_attr.pop('layer', via_attr.pop('l', None))
+        layer0 = via_attr.pop('layer0', via_attr.pop('l0', None))
+        layer1 = via_attr.pop('layer1', via_attr.pop('l1', None))
+
+        if (via_name_list is None) and (type(self).get_via_names is not None):
+            if (layer is not None):
+                via_name_list = type(self).get_via_names(p.layer, layer, True)
+            elif (layer0 is not None)  and (layer1 is not None):
+                via_name_list = type(self).get_via_names(layer0, layer1, True)
 
         for via_name in via_name_list:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
             self._add_via(via)
 
     def add_via_end(self, via_name_list: List[str], n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
+        '''
+        Either:
+        1. Provide a list of via names.
+        2. Provide a single Layer.
+        3. Provide 2 layers.
+        '''
         p = self.path_list[-1]
         center = p.stop
+
+        layer = via_attr.pop('layer', via_attr.pop('l', None))
+        layer0 = via_attr.pop('layer0', via_attr.pop('l0', None))
+        layer1 = via_attr.pop('layer1', via_attr.pop('l1', None))
+
+        if (via_name_list is None) and (type(self).get_via_names is not None):
+            if (layer is not None):
+                via_name_list = type(self).get_via_names(p.layer, layer, True)
+            elif (layer0 is not None)  and (layer1 is not None):
+                via_name_list = type(self).get_via_names(layer0, layer1, True)
 
         for via_name in via_name_list:
             via = Via(via_name, center=center, n_rows=n_rows, n_cols=n_cols, offset=offset, via_attr=via_attr)
@@ -245,6 +325,29 @@ class Route:
 
     add_via_begin = add_via_start
     add_via_stop = add_via_end
+
+    def add_via_start_to_layer(self, layer: Layer, n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
+        p = self.path_list[0]
+
+        if type(self).get_via_names is not None:
+            via_names = type(self).get_via_names(p.layer, layer, True)
+        else:
+            raise NotImplemented()
+
+        self.add_via_start(via_names, n_rows=n_rows, n_cols=n_cols, offset=offset, **via_attr)
+
+    def add_via_end_to_layer(self, layer: Layer, n_rows=1, n_cols=2, offset=[0, 0], **via_attr):
+        p = self.path_list[-1]
+
+        if type(self).get_via_names is not None:
+            via_names = type(self).get_via_names(p.layer, layer, True)
+        else:
+            raise NotImplemented()
+
+        self.add_via_end(via_names, n_rows=n_rows, n_cols=n_cols, offset=offset, **via_attr)
+
+    add_via_begin_to_layer = add_via_start_to_layer
+    add_via_stop_to_layer = add_via_end_to_layer
 
     def _add_via(self, via):
         self.via_list.append(via)
@@ -284,14 +387,17 @@ class Route:
     #     self.port_list.append(port)
 
     def get_layer(self, index=0):
+        '''
+        self.layer can be a list with a number of layers that is less than the number of segments / paths as the modulo of the index is taken in this method. This makes it possible to loop around the list, allowing for example only 2 layers to be provided to the list while having a Route consisting of several segments / Paths, alternating between the layers. This is perfect for route_custom_h and route_custom_v which uses route_alternating.
+        '''
         if isinstance(self.layer, str):
             return self.layer
         try:
-            return self.layer[index]
+            return self.layer[index % len(self.layer)]
         except:
             return self.layer
 
-    def add_corner_via(self, pos, orient):
+    def add_corner_via(self, pos, orient, layer0=None, layer1=None):
         try:
             if self.ncvias is None:
                 nrows = 2 if orient == 'v' else 1
@@ -303,23 +409,25 @@ class Route:
             if not self.cvia_rows is None:
                 nrows = self.cvia_rows
 
-            l0 = int(self.layer[0][-1])
-            l1 = int(self.layer[1][-1])
-            m1 = np.max((l0, l1))
-            m0 = np.min((l0, l1))
-            via_name = f'M{m1}_M{m0}'
-            if m1 == 5:
-                via_name = 'TM_M4' #TODO: This is GF130 specific. Should solve this differently
-                if self.ncvias is None:
-                    nrows = self.width if self.width > 2 else 2
-                else:
-                    nrows = self.ncvias
-                ncols = nrows
-                via = Via(via_name, center=pos, n_rows=nrows, n_cols=ncols, via_attr={'cutSpacing': [0.54, 0.54]})
+            layer_name0 = self.layer[0] if layer0 is None else layer0
+            layer_name1 = self.layer[1] if layer1 is None else layer1
+
+            # Validates layers and provides all the correct via names in between layer0 and layer1.
+            if type(self).get_via_names is not None:
+                via_names = type(self).get_via_names(layer_name0, layer_name1, True)
+
+            # Supports only a single via
+            # TODO: Make this support layers that are not necessarily next to each other.
+            else:
+                l0 = int(layer_name0[-1])
+                l1 = int(layer_name1[-1])
+                m1 = np.max((l0, l1))
+                m0 = np.min((l0, l1))
+                via_names = [f'M{m1}_M{m0}']
+
+            for via_name in via_names:
+                via = Via(via_name, center=pos, n_rows=nrows, n_cols=ncols)
                 self._add_via(via)
-                return
-            via = Via(via_name, center=pos, n_rows=nrows, n_cols=ncols)
-            self._add_via(via)
         except:
             return
 
@@ -461,51 +569,54 @@ class Route:
         """
         Custom route, start horisontally
         """
-        c0 = self.start
-        go_h = True # Starts horisontally
-        for path_len in self.path_len_list:
-            if go_h:
-                self.add_path(Path(self.get_layer(0), c0, dx=path_len, width=self.width, purpose=self.purpose))
-                c0 += (path_len, 0)
-            else:
-                self.add_path(Path(self.get_layer(0), c0, dy=path_len, width=self.width, purpose=self.purpose))
-                c0 += (0, path_len)
-            go_h = not go_h
-
-        # Finally, go to end
-        if go_h:
-            dx = self.stop[0] - c0[0]
-            if dx != 0:
-                self.add_path(Path(self.get_layer(0), c0, dx=dx, width=self.width, purpose=self.purpose))
-        else:
-            dy = self.stop[1] - c0[1]
-            if dy != 0:
-                self.add_path(Path(self.get_layer(0), c0, dy=dy, width=self.width, purpose=self.purpose))
+        self.route_alternating(True)
 
     def route_custom_v(self):
         """
         Custom route, start vertically
         """
+        self.route_alternating(False)
+
+    def route_alternating(self, go_horizontal):
         c0 = self.start
-        go_h = False # Starts vertically
-        for path_len in self.path_len_list:
-            if go_h:
-                self.add_path(Path(self.get_layer(0), c0, dx=path_len, width=self.width, purpose=self.purpose))
+        for i, path_len in enumerate(self.path_len_list):
+            
+            layer1 = self.get_layer(i)
+
+            if go_horizontal:
+                p = self.add_path(Path(layer1, c0, dx=path_len, width=self.width, purpose=self.purpose))
                 c0 += (path_len, 0)
             else:
-                self.add_path(Path(self.get_layer(0), c0, dy=path_len, width=self.width, purpose=self.purpose))
+                p = self.add_path(Path(layer1, c0, dy=path_len, width=self.width, purpose=self.purpose))
                 c0 += (0, path_len)
-            go_h = not go_h
+            go_horizontal = not go_horizontal
+
+            if i != 0:
+                layer0 = self.get_layer(i-1)
+
+                if layer0 != layer1:
+                    dir = 'v' if go_horizontal else 'h'
+                    self.add_corner_via(p.start, dir, layer0, layer1)
+
+        layer0 = layer1
+        layer1 = self.get_layer(i+1)
 
         # Finally, go to end
-        if go_h:
+        if go_horizontal:
             dx = self.stop[0] - c0[0]
             if dx != 0:
-                self.add_path(Path(self.get_layer(0), c0, dx=dx, width=self.width, purpose=self.purpose))
+                p = self.add_path(Path(layer1, c0, dx=dx, width=self.width, purpose=self.purpose))
         else:
             dy = self.stop[1] - c0[1]
             if dy != 0:
-                self.add_path(Path(self.get_layer(0), c0, dy=dy, width=self.width, purpose=self.purpose))
+                p = self.add_path(Path(layer1, c0, dy=dy, width=self.width, purpose=self.purpose))
+
+        if layer0 != layer1:
+            dir = 'v' if go_horizontal else 'h'
+            self.add_corner_via(p.start, dir, layer0, layer1)
+
+        # The real stop of the route will be the new stop of self. Not the given stop Coordinate.
+        self.stop = p.stop
 
     def handle_path_style(self, **kwargs):
         # Add begin/end styles
@@ -520,6 +631,9 @@ class Route:
             sum += p.length()
         return sum
     
+    def get_boxes(self):
+        return [p.box for p in self.path_list]
+    
 class Via:
     """
     Via. May have multiple rows and columns of vias
@@ -527,6 +641,10 @@ class Via:
 
     # Class-level callback (shared by all instances)
     adjust_callback: ClassVar[Optional[Callable[['Via'], bool]]] = None
+    get_via_name: Optional[Callable[[Layer, Layer, bool], str]] = None
+
+    # Assign as staticmethod to prevent binding to self
+    get_via_name = staticmethod(get_via_name)
 
     # Index of via spacing rules in tech file parameter list
     # Might be tech-dependent?
@@ -535,10 +653,19 @@ class Via:
     via2bound_space_rule_index = 6
 
     @staticmethod
+    def validate_via_name(via_name):
+        pass
+
+    @staticmethod
     def find_via_def_name_from_layer_name(tech_file, layer1_name, layer2_name):
+        # if type(self).get_via_names is not None:
+        #     via_name = type(self).get_via_names(layer1_name, layer2_name, True)
+        #     if via_name in tech_file.via_defs: return via_name
+        # else:
         for via_def in tech_file.via_defs:
             if via_def.layer1.name == layer1_name and via_def.layer2.name == layer2_name:
                 return via_def.name
+        # return False
 
     def __init__(self, via_def_name, **kwargs) -> None:
         self.via_def_name = via_def_name
@@ -764,6 +891,19 @@ class Port:
 
     # def center(self) -> Coordinate:
     #     return self.box.center
+
+    def bct(self, *args, dx=None, dy=None):
+        '''
+        Port Box Center Translate -> Port BCT
+        This method will replace having to write out all of the below where D is the Port of a Cell:
+        self.cell.D.box.center.translate(dx=SD_OFFSET/2)
+
+        Allowing the following to be written:
+        self.cell.D.bct(dx=SD_OFFSET/2)
+        '''
+        return self.box.center.translate(*args, dx=dx, dy=dy)
+    
+    ct = bct # Center Translate
 
     def translate(self, translation):
         self.position += translation

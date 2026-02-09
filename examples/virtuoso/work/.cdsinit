@@ -1,0 +1,21 @@
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;   Read environmental variables   ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+SKILLBRIDGE_IPC_SERVER_PATH = getShellEnvVar("SKILLBRIDGE_IPC_SERVER_PATH")
+SKILLBRIDGE_SOCK_NAME = getShellEnvVar("SKILLBRIDGE_SOCK_NAME")
+
+;;;;;;;;;;;;;;;
+;;   Debug   ;;
+;;;;;;;;;;;;;;;
+
+printf("SKILLBRIDGE_IPC_SERVER_PATH: %s\n", SKILLBRIDGE_IPC_SERVER_PATH)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;   Start SkillBridge   ;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+load(SKILLBRIDGE_IPC_SERVER_PATH)
+printf("SkillBridge Id: %s\n", SKILLBRIDGE_SOCK_NAME)
+pyStartServer(?id SKILLBRIDGE_SOCK_NAME ?python "python3.12")
+printf("SkillBridge server: STARTED\n")

@@ -1,4 +1,4 @@
-from pade import warn, fatal, debug, display
+from pade import warn, fatal, debug, display, skillbridge_id
 from pade.layout.geometry import *
 from pade.layout.pattern import *
 from pade.layout.routing import *
@@ -27,7 +27,7 @@ class LayoutItem:
 
         self.property_list = []
 
-        self.ws = Workspace.open()
+        self.ws = Workspace.open(skillbridge_id)
         lib_id = self.ws.dd.get_obj(self.lib_name)
         self.tech_file = self.ws.tech.get_tech_file(lib_id)
         self.cell_view = None
@@ -512,7 +512,7 @@ class LayoutInstance:
 
     def __init__(self, instance_id, **kwargs) -> None:
         self.inst = instance_id
-        self.ws = Workspace.open()
+        self.ws = Workspace.open(skillbridge_id)
         self.name = self.inst.name
         self.cell_name = self.inst.cell_name
         self.lib_name = self.inst.lib_name

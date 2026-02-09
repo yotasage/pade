@@ -1,4 +1,4 @@
-from pade import skillbridge_id
+from pade.config import config
 from pade.evaluation import Signal
 import shlib
 from skillbridge import Workspace
@@ -81,7 +81,7 @@ class SkillVIVAPlot:
         """
         # Try to open connection to server
         try:
-            ws = Workspace.open(skillbridge_id)
+            ws = Workspace.open(config.skillbridge_id)
         except Exception as e:
             warn(f'SkillPlot could not establish connection to server: {e}')
             return

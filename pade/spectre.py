@@ -292,35 +292,6 @@ def _match_progress(line_s: str) -> float | None:
 
     return value
 
-def _update_progress_bar(tq, progress, p0, is_tran=False, time_extracted=False, last_tran_time=0, sim_name='sim_name', analysis='unknown_analysis', corner=None):
-    tq.update(progress - p0)
-    
-    corner_name = 'unknown' if corner is None else corner.name
-
-    if is_tran and time_extracted:
-        tq.set_description_str(f'{sim_name} {analysis} {corner_name} t={last_tran_time}')
-    else:
-        tq.set_description_str(f'{sim_name} {analysis} {corner_name}')
-
-    p0 = progress
-
-_STATUS_MAP = {
-    'Time for NDB Parsing': 1,
-    'Time for Elaboration': 2,
-    'Time for EDB Visiting': 3,
-    'Time for parsing': 4,
-}
-_STATUS_TEXT = {
-    1: 'NDB Parsing: DONE',
-    2: 'Elaboration: DONE',
-    3: 'EDB Visit: DONE',
-    4: 'Parsing: DONE',
-}
-
-# ANSI codes for bold+underline
-BOLD_UNDER = "\033[1;4m"
-RESET = "\033[0m"
-
 @dataclass
 class SimState:
     warn_cnt: int = 0
@@ -339,6 +310,90 @@ class LogEvent: # This object represents what a single log line means.
     read_inc: int = 0
     compile_inc: int = 0
     status: int | None = None
+
+def _update_progress_bar(
+    tq,
+    p0: float,
+    progress: float,
+    sim_name: str,
+    analysis: str,
+    state: SimState,
+    last_changed: str | None = None,
+    corner=None,
+    is_tran: bool = False,
+    last_tran_time: str | None = None
+):
+    """
+    Update tqdm progress bar and description.
+
+    - Bold + underline the counter or status that changed last
+    - Show transient time if available
+    """
+    if progress is not None:
+        tq.update(progress - p0)
+
+    # ANSI codes for bold+underline
+    BOLD_UNDER = "\033[1;4m"
+    RESET = "\033[0m"
+
+    # Helper to format counters
+    def fmt_counter(name: str, value: int) -> str:
+        return f"{BOLD_UNDER}{name.upper()}:{value}{RESET}" if last_changed == name else f"{name.upper()}:{value}"
+
+    # Status display with highlighting if last changed
+    STATUS_TEXT = {
+        1: 'NDB Parsing: DONE',
+        2: 'Elaboration: DONE',
+        3: 'EDB Visit: DONE',
+        4: 'Parsing: DONE',
+    }
+    status_display = STATUS_TEXT.get(state.status, 'Working ...')
+    if last_changed == 'status':
+        status_display = f"{BOLD_UNDER}{status_display}{RESET}"
+
+    # Corner name
+    corner_name = 'unknown' if corner is None else corner.name
+
+    # Build description string
+    if is_tran and last_tran_time:
+        tq.set_description_str(f'{sim_name} {analysis} {corner_name} t={last_tran_time}')
+    else:
+        tq.set_description_str(f'{sim_name} {analysis} {corner_name}')
+
+    desc_parts = [
+        f"{sim_name}",
+        f"{analysis}",
+    ]
+
+    if last_changed:
+        desc_parts += [
+            f"{status_display}",
+            fmt_counter('error', state.error_cnt),
+            fmt_counter('warn', state.warn_cnt),
+            fmt_counter('read', state.read_cnt),
+            fmt_counter('compile', state.compile_cnt)
+        ]
+    else:
+        desc_parts += [
+            f"{corner_name}",
+        ]
+
+    # Add transient time if applicable
+    if is_tran and last_tran_time is not None:
+        desc_parts.append(f"t={last_tran_time}")
+
+    # Join and set description
+    tq.set_description_str(" | ".join(desc_parts))
+
+    return progress if progress else 0
+
+_STATUS_MAP = {
+    'Time for NDB Parsing': 1,
+    'Time for Elaboration': 2,
+    'Time for EDB Visiting': 3,
+    'Time for parsing': 4,
+}
+
 
 def parse_spectre_line(line_s: str) -> LogEvent:
     event = LogEvent()
@@ -367,9 +422,6 @@ def parse_spectre_line(line_s: str) -> LogEvent:
 
     return event
 
-def fmt_status(name: str, value: str, highlight: bool) -> str:
-    return f"{BOLD_UNDER}{value}{RESET}" if highlight else value
-
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
         # Build spectre command
         popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} -f psfascii -log -ahdllibdir {simulation_raw_dir} "
@@ -381,12 +433,11 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         log_file_sim = to_path(log_dir, 'spectre_sim.log')
         # Progress bar
         tq = tqdm(total=100, leave=False, position=tqdm_pos, bar_format='{desc} ({percentage:3.2f}%) |{bar}| [{elapsed}<{remaining}]')
-        state = SimState()
         
+        state = SimState()
         current_analysis = None
-        time_extracted = False
+        last_tran_time = None
         p0 = 0
-
 
         process = subprocess.Popen(
             popen_cmd,
@@ -400,13 +451,9 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         )
 
         with open(log_file_setup, 'w', encoding='utf-8', errors='replace') as f:
-            saw_output = False
             for line_s in process.stdout:
-                saw_output = True
                 f.write(line_s)
-
                 event = parse_spectre_line(line_s)
-
                 if event.analysis: state.analysis = event.analysis
 
                 # Update counters
@@ -416,7 +463,7 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                 state.compile_cnt += event.compile_inc
 
                 # Determine which counter/status changed last and whether anything has changed
-                change = True
+                last_changed = None
                 if event.status is not None and event.status > state.status:
                     state.status = event.status
                     last_changed = 'status'
@@ -428,39 +475,16 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                     last_changed = 'read'
                 elif event.compile_inc:
                     last_changed = 'compile'
-                else:
-                    change = False
 
+                # If progress is seen, break to start spectre_sim.log
                 if event.progress is not None:
-                    _update_progress_bar(tq, event.progress, p0, False, False, 0, sim_name, current_analysis, corner)
-                    p0 = event.progress
+                    p0 = _update_progress_bar(tq, p0, event.progress, sim_name, state.analysis, state, last_changed=last_changed, corner=corner)
                     break
-
-                elif change:
-                    # Compute progress
-                    setup_progress = state.status * 25
-                    tq.update(setup_progress - p0)
-                    p0 = setup_progress
-
-                    # Build display strings with bold+underline if last changed
-                    def fmt_counter(name, value):
-                        if last_changed == name:
-                            return f"{BOLD_UNDER}{name.upper()}:{value}{RESET}"
-                        return f"{name.upper()}:{value}"
-
-                    STATUS_DISPLAY = fmt_status('status', _STATUS_TEXT.get(state.status, 'Working ...'), last_changed == 'status')
-                    STATUS_DISPLAY = _STATUS_TEXT.get(state.status, 'Working ...')
-                    if last_changed == 'status':
-                        STATUS_DISPLAY = f"{BOLD_UNDER}{STATUS_DISPLAY}{RESET}"
-
-                    # Update tqdm description
-                    tq.set_description_str(
-                        f"{sim_name} {current_analysis} | {STATUS_DISPLAY} | "
-                        f"{fmt_counter('error', state.error_cnt)} | "
-                        f"{fmt_counter('warn', state.warn_cnt)} | "
-                        f"{fmt_counter('read', state.read_cnt)} | "
-                        f"{fmt_counter('compile', state.compile_cnt)}"
-                    )
+                
+                # Otherwise, update progress based on status changes
+                elif last_changed:
+                    setup_progress = state.status * 25 # Compute progress
+                    p0 = _update_progress_bar(tq, p0, setup_progress, sim_name, state.analysis, state, last_changed=last_changed, corner=corner)
 
         with open(log_file_sim, 'w', encoding='utf-8', errors='replace') as f:
             f.write(line_s) # Write progress line from before.
@@ -501,11 +525,9 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                         time_str = _extract_tran_time(line_s)
                         if time_str:
                             last_tran_time = time_str
-                            time_extracted = True
 
                     # Update progress bar and description
-                    _update_progress_bar(tq, progress, p0, is_tran, time_extracted, last_tran_time, sim_name, analysis, corner)
-                    p0 = progress
+                    p0 = _update_progress_bar(tq, p0, progress, sim_name, analysis, state, last_changed=None, corner=corner, is_tran=is_tran, last_tran_time=last_tran_time)
 
         tq.close()
         if not saw_output:
@@ -513,7 +535,7 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
 
         process.wait()
         if process.returncode != 0:
-            raise SpectreError(log_file)
+            raise SpectreError(log_file_sim)
 
         display("SPECTRE SIMULATION COMPLETE")
         display(f"Raw data directory: {simulation_raw_dir}")

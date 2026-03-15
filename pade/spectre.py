@@ -232,25 +232,17 @@ class SpectreError(Exception):
     def __str__(self):
         return self.message
 
-
+_TRAN_TIME_RE0 = re.compile(r'time\s*=\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\b') # Ex1: ... time = <number><space><unit> ...
+_TRAN_TIME_RE1 = re.compile(r'^\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\s*/') # Ex2: <number><space><unit> / <total> ...
 def _extract_tran_time(line_s: str) -> str | None:
     """Return a display-ready transient time like '151.33 ns' if found, else None."""
-    # Ex1: ... time = <number><space><unit> ...
-    m = re.search(
-        r'time\s*=\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\b',
-        line_s
-    )
-    if m:
-        return f"{m.group(1)} {m.group(2)}"
-    # Ex2: <number><space><unit> / <total> ...
-    m = re.search(
-        r'^\s*([+\-]?\d+(?:\.\d+)?(?:[eE][+\-]?\d+)?)\s*(fs|ps|ns|us|µs|ms|s)\s*/',
-        line_s
-    )
-    if m:
-        return f"{m.group(1)} {m.group(2)}"
+    for regex in (_TRAN_TIME_RE0, _TRAN_TIME_RE1):
+        m = regex.search(line_s)
+        if m: return f"{m.group(1)} {m.group(2)}"
+
     return None
 
+_ANALYSIS_HEAD_DECL_RE = re.compile(r"Analysis\s+`(\w+)'") # Compile regex once
 def _extract_current_analysis_from_header(line_s: str) -> str | None:
     '''
     Example of line that matches for tran analysis:
@@ -258,30 +250,35 @@ def _extract_current_analysis_from_header(line_s: str) -> str | None:
     Transient Analysis `tran': time = (0 s -> 146.484 ns)
     *****************************************************
     '''
-    analysis_decl = re.search(r"Analysis\s+`(\w+)'", line_s)
-    if analysis_decl and "iteration" not in line_s.lower():
-        return analysis_decl.group(1)
-    
+    # Pre-filtering (fast)
+    if "Analysis" not in line_s: return None
+    if "iteration" in line_s.lower(): return None
+
+    m = _ANALYSIS_HEAD_DECL_RE.search(line_s)
+    if m: return m.group(1)
+    return None
+
+_ANALYSIS_DECL_RE = re.compile(r'^\s*(\w+):') # Compile regex once
 def _extract_current_analysis(line_s: str) -> str | None:
     '''
     Example of line that matches for tran analysis:
     
     '''
     analysis = None
-    analysis_match = re.match(r'^\s*(\w+):', line_s)
+    analysis_match = _ANALYSIS_DECL_RE.match(line_s)
     if analysis_match:
         analysis = analysis_match.group(1)
     return analysis
 
+# r'\((\d+\.\d+)\s?%\)' -> match floats only
+# r'\((\d+(?:\.\d+)?)\s?%\)' -> match integers and floats
+_PROGRESS_RE = re.compile(r'\((\d+(?:\.\d+)?)\s?%\)') # Putting the regex here causes it to compile once instead of for every line, improving performance (not that it is needed necessarily).
 def _match_progress(line_s: str) -> float | None:
-    progress = None
-    progress_line = re.search(r'\((\d+\.\d+)\s?%\)', line_s)
-    if progress_line:
-        try:
-            progress = float(progress_line.group(1))
-        except ValueError:
-            pass
-    return progress
+    # Pre-filtering (fast)
+    if '%' not in line_s: return None
+
+    m = _PROGRESS_RE.search(line_s)
+    return float(m.group(1)) if m else None
 
 def _update_progress_bar(tq, progress, p0, is_tran=False, time_extracted=False, last_tran_time=0, sim_name='sim_name', analysis='unknown_analysis', corner=None):
     tq.update(progress - p0)

@@ -195,7 +195,7 @@ class Spectre(object):
                 except:
                     pass
                 # Only write time info to console
-                progress_line = re.search('\(.* %\)', line_s)
+                progress_line = re.search(r'\(.* %\)', line_s)
                 if progress_line:
                     progress = float(line_s.split(' %')[0].split('(')[1])
                     analysis = line_s.split(':')[0].strip()
@@ -251,6 +251,49 @@ def _extract_tran_time(line_s: str) -> str | None:
         return f"{m.group(1)} {m.group(2)}"
     return None
 
+def _extract_current_analysis_from_header(line_s: str) -> str | None:
+    '''
+    Example of line that matches for tran analysis:
+    *****************************************************
+    Transient Analysis `tran': time = (0 s -> 146.484 ns)
+    *****************************************************
+    '''
+    analysis_decl = re.search(r"Analysis\s+`(\w+)'", line_s)
+    if analysis_decl and "iteration" not in line_s.lower():
+        return analysis_decl.group(1)
+    
+def _extract_current_analysis(line_s: str) -> str | None:
+    '''
+    Example of line that matches for tran analysis:
+    
+    '''
+    analysis = None
+    analysis_match = re.match(r'^\s*(\w+):', line_s)
+    if analysis_match:
+        analysis = analysis_match.group(1)
+    return analysis
+
+def _match_progress(line_s: str) -> float | None:
+    progress = None
+    progress_line = re.search(r'\((\d+\.\d+)\s?%\)', line_s)
+    if progress_line:
+        try:
+            progress = float(progress_line.group(1))
+        except ValueError:
+            pass
+    return progress
+
+def _update_progress_bar(tq, progress, p0, is_tran=False, time_extracted=False, last_tran_time=0, sim_name='sim_name', analysis='unknown_analysis', corner=None):
+    tq.update(progress - p0)
+    
+    corner_name = 'unknown' if corner is None else corner.name
+
+    if is_tran and time_extracted:
+        tq.set_description_str(f'{sim_name} {analysis} {corner_name} t={last_tran_time}')
+    else:
+        tq.set_description_str(f'{sim_name} {analysis} {corner_name}')
+
+    p0 = progress
 
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
         # Build spectre command
@@ -259,7 +302,8 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
             popen_cmd += f"{cmd} "
 
         display(f'Starting spectre simulation.\nCommand: {popen_cmd}')
-        log_file = to_path(log_dir, 'spectre_sim.log')
+        log_file_setup = to_path(log_dir, 'spectre_setup.log')
+        log_file_sim = to_path(log_dir, 'spectre_sim.log')
         # Progress bar
         tq = tqdm(total=100, leave=False, position=tqdm_pos, bar_format='{desc} ({percentage:3.2f}%) |{bar}| [{elapsed}<{remaining}]')
         
@@ -278,7 +322,28 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
             errors='replace'          # never crash on odd bytes
         )
 
-        with open(log_file, 'w', encoding='utf-8', errors='replace') as f:
+        f_setup = open(log_file_setup, 'w', encoding='utf-8', errors='replace')
+        saw_output = False
+        for line_s in process.stdout:
+            saw_output = True
+            f_setup.write(line_s)
+
+            # Detect analysis type from header lines
+            analysis_decl = _extract_current_analysis_from_header(line_s)
+            if analysis_decl: current_analysis = analysis_decl
+
+            # Match progress percentage e.g. "(2.58 %)" or "(4.01%)" as this indicates that the simulation has started.
+            progress = _match_progress(line_s)
+            if progress:
+                # Update progress bar and description
+                _update_progress_bar(tq, progress, p0, False, False, 0, sim_name, current_analysis, corner)
+                p0 = progress
+                break
+
+        f_setup.close()
+
+        with open(log_file_sim, 'w', encoding='utf-8', errors='replace') as f:
+            f.write(line_s) # Write progress line from before.
 
             saw_output = False
             for line_s in process.stdout:
@@ -286,53 +351,41 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                 f.write(line_s)
 
                 # Detect analysis type from header lines
-                analysis_decl = re.search(r"Analysis\s+`(\w+)'", line_s)
-                if analysis_decl and "iteration" not in line_s.lower():
-                    current_analysis = analysis_decl.group(1)
+                analysis_decl = _extract_current_analysis_from_header(line_s)
+                if analysis_decl: current_analysis = analysis_decl
 
                 # Match progress percentage e.g. "(2.58 %)" or "(4.01%)"
-                progress_line = re.search(r'\((\d+\.\d+)\s?%\)', line_s)
-                if progress_line:
-                    try:
-                        progress = float(progress_line.group(1))
-                        
-                        # Try to extract analysis from line prefix
-                        analysis_match = re.match(r'^\s*(\w+):', line_s)
-                        if analysis_match:
-                            analysis = analysis_match.group(1)
-                        else:
-                            analysis = current_analysis if current_analysis else "unknown"
+                progress = _match_progress(line_s)
+                if progress:
+                    # Try to extract analysis from line prefix
+                    analysis_match = _extract_current_analysis(line_s)
+                    if analysis_match:
+                        analysis = analysis_match
+                    else:
+                        analysis = current_analysis if current_analysis else "unknown"
 
-                        # Validate analysis only if it's in known list
-                        # known_analyses = [
-                        #     'ac', 'tran', 'noise', 'stb', 'dc',
-                        #     'montecarlo_ac', 'montecarlo_tran',
-                        #     'montecarlo_noise', 'montecarlo_stb',
-                        #     'montecarlo_dc'
-                        # ]
-                        # if analysis not in known_analyses:
-                        #     analysis = "unknown"
-                            
+                    # Validate analysis only if it's in known list
+                    # known_analyses = [
+                    #     'ac', 'tran', 'noise', 'stb', 'dc',
+                    #     'montecarlo_ac', 'montecarlo_tran',
+                    #     'montecarlo_noise', 'montecarlo_stb',
+                    #     'montecarlo_dc'
+                    # ]
+                    # if analysis not in known_analyses:
+                    #     analysis = "unknown"
                         
-                        # If it's transient (analysis contains 'tran'), extract and remember current time
-                        is_tran = ('tran' in (analysis or '').lower()) or ('tran' in (current_analysis or '').lower())
-                        if is_tran:
-                            time_str = _extract_tran_time(line_s)
-                            if time_str:
-                                last_tran_time = time_str
-                                time_extracted = True
+                    
+                    # If it's transient (analysis contains 'tran'), extract and remember current time
+                    is_tran = ('tran' in (analysis or '').lower()) or ('tran' in (current_analysis or '').lower())
+                    if is_tran:
+                        time_str = _extract_tran_time(line_s)
+                        if time_str:
+                            last_tran_time = time_str
+                            time_extracted = True
 
-                        # Update progress bar and description
-                        tq.update(progress - p0)
-                        
-                        if is_tran and time_extracted:
-                            tq.set_description_str(f'{sim_name} {analysis} {corner.name} t={last_tran_time}')
-                        else:
-                            tq.set_description_str(f'{sim_name} {analysis} {corner.name}')
-
-                        p0 = progress
-                    except ValueError:
-                        continue
+                    # Update progress bar and description
+                    _update_progress_bar(tq, progress, p0, is_tran, time_extracted, last_tran_time, sim_name, analysis, corner)
+                    p0 = progress
 
         tq.close()
         if not saw_output:

@@ -5,6 +5,7 @@ import subprocess
 from tqdm import tqdm
 from pade import display, succeed, fatal, warn
 from datetime import datetime
+from dataclasses import dataclass
 
 class Spectre(object):
     """
@@ -320,6 +321,55 @@ _STATUS_TEXT = {
 BOLD_UNDER = "\033[1;4m"
 RESET = "\033[0m"
 
+@dataclass
+class SimState:
+    warn_cnt: int = 0
+    error_cnt: int = 0
+    read_cnt: int = 0
+    compile_cnt: int = 0
+    status: int = 0
+    analysis: str = "unknown"
+
+@dataclass
+class LogEvent: # This object represents what a single log line means.
+    progress: float | None = None
+    analysis: str | None = None
+    warn_inc: int = 0
+    error_inc: int = 0
+    read_inc: int = 0
+    compile_inc: int = 0
+    status: int | None = None
+
+def parse_spectre_line(line_s: str) -> LogEvent:
+    event = LogEvent()
+
+    analysis = _extract_current_analysis_from_header(line_s)
+    if analysis:
+        event.analysis = analysis
+
+    if 'WARNING' in line_s:
+        event.warn_inc = 1
+    elif 'ERROR' in line_s:
+        event.error_inc = 1
+    elif 'Reading' in line_s:
+        event.read_inc = 1
+    elif 'Compiling' in line_s:
+        event.compile_inc = 1
+
+    for key, value in _STATUS_MAP.items():
+        if key in line_s:
+            event.status = value
+            break
+
+    progress = _match_progress(line_s)
+    if progress is not None:
+        event.progress = progress
+
+    return event
+
+def fmt_status(name: str, value: str, highlight: bool) -> str:
+    return f"{BOLD_UNDER}{value}{RESET}" if highlight else value
+
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
         # Build spectre command
         popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} -f psfascii -log -ahdllibdir {simulation_raw_dir} "
@@ -331,16 +381,12 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         log_file_sim = to_path(log_dir, 'spectre_sim.log')
         # Progress bar
         tq = tqdm(total=100, leave=False, position=tqdm_pos, bar_format='{desc} ({percentage:3.2f}%) |{bar}| [{elapsed}<{remaining}]')
+        state = SimState()
         
         current_analysis = None
         time_extracted = False
         p0 = 0
 
-        new_error_cnt, error_cnt = 0, 0
-        new_warn_cnt, warn_cnt = 0, 0
-        new_read_cnt, read_cnt = 0, 0
-        new_compile_cnt, compile_cnt = 0, 0
-        new_status, status = 0, 0
 
         process = subprocess.Popen(
             popen_cmd,
@@ -359,61 +405,42 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                 saw_output = True
                 f.write(line_s)
 
-                # Detect analysis type from header lines
-                analysis_decl = _extract_current_analysis_from_header(line_s)
-                if analysis_decl: current_analysis = analysis_decl
+                event = parse_spectre_line(line_s)
 
-                if 'WARNING' in line_s: new_warn_cnt += 1 
-                elif 'Reading' in line_s: new_read_cnt += 1
-                elif 'ERROR' in line_s: new_error_cnt += 1
-                elif 'Compiling' in line_s: new_compile_cnt += 1
+                if event.analysis: state.analysis = event.analysis
 
-                for key, value in _STATUS_MAP.items():
-                    if key in line_s:
-                        new_status = value
-                        break
+                # Update counters
+                state.warn_cnt += event.warn_inc
+                state.error_cnt += event.error_inc
+                state.read_cnt += event.read_inc
+                state.compile_cnt += event.compile_inc
 
-                # Match progress percentage e.g. "(2.58 %)" or "(4.01%)" as this indicates that the simulation has started.
-                progress = _match_progress(line_s)
-                if progress is not None:
-                    # Update progress bar and description
-                    _update_progress_bar(tq, progress, p0, False, False, 0, sim_name, current_analysis, corner)
-                    p0 = progress
+                # Determine which counter/status changed last and whether anything has changed
+                change = True
+                if event.status is not None and event.status > state.status:
+                    state.status = event.status
+                    last_changed = 'status'
+                elif event.error_inc:
+                    last_changed = 'error'
+                elif event.warn_inc:
+                    last_changed = 'warn'
+                elif event.read_inc:
+                    last_changed = 'read'
+                elif event.compile_inc:
+                    last_changed = 'compile'
+                else:
+                    change = False
+
+                if event.progress is not None:
+                    _update_progress_bar(tq, event.progress, p0, False, False, 0, sim_name, current_analysis, corner)
+                    p0 = event.progress
                     break
 
-                elif (new_warn_cnt > warn_cnt) or (new_read_cnt > read_cnt) or (new_error_cnt > error_cnt) or (new_compile_cnt > compile_cnt) or (new_status > status):
-                    # Determine which counter/status changed last
-                    last_changed = None
-                    if new_status > status:
-                        last_changed = 'status'
-                    elif new_error_cnt > error_cnt:
-                        last_changed = 'error'
-                    elif new_warn_cnt > warn_cnt:
-                        last_changed = 'warn'
-                    elif new_read_cnt > read_cnt:
-                        last_changed = 'read'
-                    elif new_compile_cnt > compile_cnt:
-                        last_changed = 'compile'
-                    
-                    # Update counters
-                    warn_cnt = new_warn_cnt
-                    read_cnt = new_read_cnt
-                    error_cnt = new_error_cnt
-                    compile_cnt = new_compile_cnt
-                    status = new_status
-
+                elif change:
                     # Compute progress
-                    setup_progress = status * 25
+                    setup_progress = state.status * 25
                     tq.update(setup_progress - p0)
                     p0 = setup_progress
-
-                    # Map counter names to values
-                    COUNTERS = {
-                        'error': error_cnt,
-                        'warn': warn_cnt,
-                        'read': read_cnt,
-                        'compile': compile_cnt,
-                    }
 
                     # Build display strings with bold+underline if last changed
                     def fmt_counter(name, value):
@@ -421,30 +448,18 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                             return f"{BOLD_UNDER}{name.upper()}:{value}{RESET}"
                         return f"{name.upper()}:{value}"
 
-                    # STATUS = _STATUS_TEXT.get(status, 'Working ...')
-                    # corner_name = 'unknown' if corner is None else corner.name
-                    # tq.set_description_str(f'{sim_name} {current_analysis} | \u001b[1m\u001b[4m{STATUS}\u001b[0m\u001b[0m | ERROR:{error_cnt} | WARN:{warn_cnt} | READ:{read_cnt} | COMPILE:{compile_cnt} |')
-
-                    STATUS_DISPLAY = _STATUS_TEXT.get(status, 'Working ...')
+                    STATUS_DISPLAY = fmt_status('status', _STATUS_TEXT.get(state.status, 'Working ...'), last_changed == 'status')
+                    STATUS_DISPLAY = _STATUS_TEXT.get(state.status, 'Working ...')
                     if last_changed == 'status':
                         STATUS_DISPLAY = f"{BOLD_UNDER}{STATUS_DISPLAY}{RESET}"
 
                     # Update tqdm description
                     tq.set_description_str(
                         f"{sim_name} {current_analysis} | {STATUS_DISPLAY} | "
-                        f"{fmt_counter('error', error_cnt)} | "
-                        f"{fmt_counter('warn', warn_cnt)} | "
-                        f"{fmt_counter('read', read_cnt)} | "
-                        f"{fmt_counter('compile', compile_cnt)}"
-                    )
-
-                    # Update tqdm description
-                    tq.set_description_str(
-                        f"{sim_name} {current_analysis} | {STATUS_DISPLAY} | "
-                        f"{fmt_counter('error', error_cnt)} | "
-                        f"{fmt_counter('warn', warn_cnt)} | "
-                        f"{fmt_counter('read', read_cnt)} | "
-                        f"{fmt_counter('compile', compile_cnt)}"
+                        f"{fmt_counter('error', state.error_cnt)} | "
+                        f"{fmt_counter('warn', state.warn_cnt)} | "
+                        f"{fmt_counter('read', state.read_cnt)} | "
+                        f"{fmt_counter('compile', state.compile_cnt)}"
                     )
 
         with open(log_file_sim, 'w', encoding='utf-8', errors='replace') as f:

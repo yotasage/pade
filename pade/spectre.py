@@ -272,13 +272,24 @@ def _extract_current_analysis(line_s: str) -> str | None:
 
 # r'\((\d+\.\d+)\s?%\)' -> match floats only
 # r'\((\d+(?:\.\d+)?)\s?%\)' -> match integers and floats
-_PROGRESS_RE = re.compile(r'\((\d+(?:\.\d+)?)\s?%\)') # Putting the regex here causes it to compile once instead of for every line, improving performance (not that it is needed necessarily).
+# r'\((\d+(?:\.\d+)?)\s*([muµ]?)%\)' -> match integers and floats with prefix m and u/µ
+_PROGRESS_RE = re.compile(r'\((\d+(?:\.\d+)?)\s*([muµ]?)%\)') # Putting the regex here causes it to compile once instead of for every line, improving performance (not that it is needed necessarily).
 def _match_progress(line_s: str) -> float | None:
     # Pre-filtering (fast)
     if '%' not in line_s: return None
 
     m = _PROGRESS_RE.search(line_s)
-    return float(m.group(1)) if m else None
+    if not m: return None
+
+    value = float(m.group(1))
+    prefix = m.group(2)
+
+    if prefix == 'm':
+        value *= 1e-3
+    elif prefix in ('u', 'µ'):
+        value *= 1e-6
+
+    return value
 
 def _update_progress_bar(tq, progress, p0, is_tran=False, time_extracted=False, last_tran_time=0, sim_name='sim_name', analysis='unknown_analysis', corner=None):
     tq.update(progress - p0)
@@ -291,6 +302,23 @@ def _update_progress_bar(tq, progress, p0, is_tran=False, time_extracted=False, 
         tq.set_description_str(f'{sim_name} {analysis} {corner_name}')
 
     p0 = progress
+
+_STATUS_MAP = {
+    'Time for NDB Parsing': 1,
+    'Time for Elaboration': 2,
+    'Time for EDB Visiting': 3,
+    'Time for parsing': 4,
+}
+_STATUS_TEXT = {
+    1: 'NDB Parsing: DONE',
+    2: 'Elaboration: DONE',
+    3: 'EDB Visit: DONE',
+    4: 'Parsing: DONE',
+}
+
+# ANSI codes for bold+underline
+BOLD_UNDER = "\033[1;4m"
+RESET = "\033[0m"
 
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
         # Build spectre command
@@ -308,6 +336,12 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         time_extracted = False
         p0 = 0
 
+        new_error_cnt, error_cnt = 0, 0
+        new_warn_cnt, warn_cnt = 0, 0
+        new_read_cnt, read_cnt = 0, 0
+        new_compile_cnt, compile_cnt = 0, 0
+        new_status, status = 0, 0
+
         process = subprocess.Popen(
             popen_cmd,
             stdout=subprocess.PIPE,
@@ -319,25 +353,99 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
             errors='replace'          # never crash on odd bytes
         )
 
-        f_setup = open(log_file_setup, 'w', encoding='utf-8', errors='replace')
-        saw_output = False
-        for line_s in process.stdout:
-            saw_output = True
-            f_setup.write(line_s)
+        with open(log_file_setup, 'w', encoding='utf-8', errors='replace') as f:
+            saw_output = False
+            for line_s in process.stdout:
+                saw_output = True
+                f.write(line_s)
 
-            # Detect analysis type from header lines
-            analysis_decl = _extract_current_analysis_from_header(line_s)
-            if analysis_decl: current_analysis = analysis_decl
+                # Detect analysis type from header lines
+                analysis_decl = _extract_current_analysis_from_header(line_s)
+                if analysis_decl: current_analysis = analysis_decl
 
-            # Match progress percentage e.g. "(2.58 %)" or "(4.01%)" as this indicates that the simulation has started.
-            progress = _match_progress(line_s)
-            if progress:
-                # Update progress bar and description
-                _update_progress_bar(tq, progress, p0, False, False, 0, sim_name, current_analysis, corner)
-                p0 = progress
-                break
+                if 'WARNING' in line_s: new_warn_cnt += 1 
+                elif 'Reading' in line_s: new_read_cnt += 1
+                elif 'ERROR' in line_s: new_error_cnt += 1
+                elif 'Compiling' in line_s: new_compile_cnt += 1
 
-        f_setup.close()
+                for key, value in _STATUS_MAP.items():
+                    if key in line_s:
+                        new_status = value
+                        break
+
+                # Match progress percentage e.g. "(2.58 %)" or "(4.01%)" as this indicates that the simulation has started.
+                progress = _match_progress(line_s)
+                if progress is not None:
+                    # Update progress bar and description
+                    _update_progress_bar(tq, progress, p0, False, False, 0, sim_name, current_analysis, corner)
+                    p0 = progress
+                    break
+
+                elif (new_warn_cnt > warn_cnt) or (new_read_cnt > read_cnt) or (new_error_cnt > error_cnt) or (new_compile_cnt > compile_cnt) or (new_status > status):
+                    # Determine which counter/status changed last
+                    last_changed = None
+                    if new_status > status:
+                        last_changed = 'status'
+                    elif new_error_cnt > error_cnt:
+                        last_changed = 'error'
+                    elif new_warn_cnt > warn_cnt:
+                        last_changed = 'warn'
+                    elif new_read_cnt > read_cnt:
+                        last_changed = 'read'
+                    elif new_compile_cnt > compile_cnt:
+                        last_changed = 'compile'
+                    
+                    # Update counters
+                    warn_cnt = new_warn_cnt
+                    read_cnt = new_read_cnt
+                    error_cnt = new_error_cnt
+                    compile_cnt = new_compile_cnt
+                    status = new_status
+
+                    # Compute progress
+                    setup_progress = status * 25
+                    tq.update(setup_progress - p0)
+                    p0 = setup_progress
+
+                    # Map counter names to values
+                    COUNTERS = {
+                        'error': error_cnt,
+                        'warn': warn_cnt,
+                        'read': read_cnt,
+                        'compile': compile_cnt,
+                    }
+
+                    # Build display strings with bold+underline if last changed
+                    def fmt_counter(name, value):
+                        if last_changed == name:
+                            return f"{BOLD_UNDER}{name.upper()}:{value}{RESET}"
+                        return f"{name.upper()}:{value}"
+
+                    # STATUS = _STATUS_TEXT.get(status, 'Working ...')
+                    # corner_name = 'unknown' if corner is None else corner.name
+                    # tq.set_description_str(f'{sim_name} {current_analysis} | \u001b[1m\u001b[4m{STATUS}\u001b[0m\u001b[0m | ERROR:{error_cnt} | WARN:{warn_cnt} | READ:{read_cnt} | COMPILE:{compile_cnt} |')
+
+                    STATUS_DISPLAY = _STATUS_TEXT.get(status, 'Working ...')
+                    if last_changed == 'status':
+                        STATUS_DISPLAY = f"{BOLD_UNDER}{STATUS_DISPLAY}{RESET}"
+
+                    # Update tqdm description
+                    tq.set_description_str(
+                        f"{sim_name} {current_analysis} | {STATUS_DISPLAY} | "
+                        f"{fmt_counter('error', error_cnt)} | "
+                        f"{fmt_counter('warn', warn_cnt)} | "
+                        f"{fmt_counter('read', read_cnt)} | "
+                        f"{fmt_counter('compile', compile_cnt)}"
+                    )
+
+                    # Update tqdm description
+                    tq.set_description_str(
+                        f"{sim_name} {current_analysis} | {STATUS_DISPLAY} | "
+                        f"{fmt_counter('error', error_cnt)} | "
+                        f"{fmt_counter('warn', warn_cnt)} | "
+                        f"{fmt_counter('read', read_cnt)} | "
+                        f"{fmt_counter('compile', compile_cnt)}"
+                    )
 
         with open(log_file_sim, 'w', encoding='utf-8', errors='replace') as f:
             f.write(line_s) # Write progress line from before.
@@ -353,7 +461,7 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
 
                 # Match progress percentage e.g. "(2.58 %)" or "(4.01%)"
                 progress = _match_progress(line_s)
-                if progress:
+                if progress is not None:
                     # Try to extract analysis from line prefix
                     analysis_match = _extract_current_analysis(line_s)
                     if analysis_match:

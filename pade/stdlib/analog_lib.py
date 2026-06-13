@@ -249,7 +249,7 @@ class vcvs(Cell):
     Voltage Controlled Voltage Source (Ideal Voltage Amplifier)
     Terminals: 'out_p', 'out_n', 'in_p', 'in_n'
     """
-    def __init__(self, instance_name, parent_cell, gain):
+    def __init__(self, instance_name, parent_cell, gain=1.0):
         # Call super init
         super().__init__('vcvs', instance_name, parent_cell, declare=False, library_name="analog_lib")
         # Add terminals
@@ -259,6 +259,33 @@ class vcvs(Cell):
         self.add_terminal("in_n")
         # Add properties
         self.add_parameters({'gain': num2string(gain)})
+
+class pcccs(CellPN):
+    """
+    Polynomial Current Controlled Current Source (pcccs) (Ideal Current Amplifier)
+    Terminals: p, n
+
+    probes [...] Devices through which the controlling currents flow.
+
+    ports [...] Index of the probe ports through which the controlling currents flow.
+    
+    c (coeffs) [...] Polynomial coefficients. At least one must be given.
+    """
+    def __init__(self, instance_name, parent_cell, c=[], ports=[], probes=[], gain=1.0):
+        # Call super init
+        super().__init__('pcccs', instance_name, parent_cell, declare=False, library_name="analog_lib")
+        # Add terminals
+        self.p = self.add_terminal("p")
+        self.n = self.add_terminal("n")
+        # Add properties
+        self.add_parameters({'gain': num2string(gain),
+                             'coeffs': f"[{' '.join(str(num) for num in c)}]",
+                             'probes': f"[{' '.join(probes)}]"})
+        
+        if ports: self.add_parameters({'ports': f"[{' '.join(ports)}]"})
+
+        # for key in kwargs:
+        #     self.set_parameter(key, kwargs[key])
 
 class vpulse(CellPN):
     """
@@ -291,7 +318,7 @@ class vpwl(CellPN):
             List of time/value points
     Terminals: p, n
     """
-    def __init__(self, instance_name, parent_cell, wave, **kwargs):
+    def __init__(self, instance_name, parent_cell, wave, vdc=None, **kwargs):
         # Call super init
         super().__init__('vsource', instance_name, parent_cell, declare=False, library_name="analog_lib")
         # Add terminals
@@ -299,6 +326,7 @@ class vpwl(CellPN):
         self.n = self.add_terminal("n")
         wave_str_list = [num2string(w) for w in wave]
         # Add properties
+        if (vdc is not None): self.add_parameters({'dc': num2string(vdc), 'type': 'dc', 'mag': 0})
         wave_str = "[" + ' '.join(wave_str_list) + ']'
         self.add_parameters({'type': 'pwl', 'wave': wave_str})
         # Add optional properties

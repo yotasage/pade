@@ -243,7 +243,7 @@ def _extract_tran_time(line_s: str) -> str | None:
 
     return None
 
-_ANALYSIS_HEAD_DECL_RE = re.compile(r"Analysis\s+`(\w+)'") # Compile regex once
+_ANALYSIS_HEAD_DECL_RE = re.compile(r"Analysis\s+`([\w-]+)'") # Compile regex once
 def _extract_current_analysis_from_header(line_s: str) -> str | None:
     '''
     Example of line that matches for tran analysis:
@@ -259,7 +259,7 @@ def _extract_current_analysis_from_header(line_s: str) -> str | None:
     if m: return m.group(1)
     return None
 
-_ANALYSIS_DECL_RE = re.compile(r'^\s*(\w+):') # Compile regex once
+_ANALYSIS_DECL_RE = re.compile(r'^\s*([\w-]+):') # Compile regex once
 def _extract_current_analysis(line_s: str) -> str | None:
     '''
     Example of line that matches for tran analysis:
@@ -291,6 +291,11 @@ def _match_progress(line_s: str) -> float | None:
         value *= 1e-6
 
     return value
+
+def valid_progress(line, new_progress):
+    if ('tran' in line) and ('noise' in line): return new_progress
+    elif ('tran' in line): return new_progress
+    return None
 
 @dataclass
 class SimState:
@@ -499,8 +504,9 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                 if analysis_decl: current_analysis = analysis_decl
 
                 # Match progress percentage e.g. "(2.58 %)" or "(4.01%)"
-                progress = _match_progress(line_s)
-                if progress is not None:
+                new_progress = _match_progress(line_s)
+
+                if new_progress is not None:
                     # Try to extract analysis from line prefix
                     analysis_match = _extract_current_analysis(line_s)
                     if analysis_match:
@@ -525,6 +531,10 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                         time_str = _extract_tran_time(line_s)
                         if time_str:
                             last_tran_time = time_str
+
+                    # Handle progress of different analyses
+                    new_progress = valid_progress(line_s, new_progress)
+                    progress = new_progress if new_progress else progress
 
                     # Update progress bar and description
                     p0 = _update_progress_bar(tq, p0, progress, sim_name, analysis, state, last_changed=None, corner=corner, is_tran=is_tran, last_tran_time=last_tran_time)

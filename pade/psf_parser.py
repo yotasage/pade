@@ -5,6 +5,7 @@ from shlib import ls, to_path, mkdir, rm
 from collections.abc import MutableMapping
 from fnmatch import fnmatchcase
 from numbers import Number
+from typing import Any, List, Mapping, Union
 import pandas as pd
 import numpy as np
 import os
@@ -181,7 +182,7 @@ class PSFParser(object):
                 s = _sweep_signal(sweep, analysis_name, self.sim_name)
                 self.signals[f'{self.sim_name}:{analysis_name}:{s.name}'] = s
 
-    def load(self, signals='all', missing_ok=False):
+    def load(self, signals: Union[str, List[str], Mapping[Any, Union[str, List[str]]]] = 'all', missing_ok: bool = False):
         """
         Read signal values now, in one pass per result file. Signals already read are not read again.
 
@@ -192,7 +193,7 @@ class PSFParser(object):
             missing_ok: bool
                 If False, warn about names and patterns that match nothing
         """
-        if isinstance(signals, dict):
+        if isinstance(signals, Mapping):
             wanted = signals
         else:
             wanted = {None: signals}

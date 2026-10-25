@@ -118,7 +118,7 @@ class cap(CellPN):
 
 class inductor(CellPN):
     """
-    Capacitor
+    Inductor
     terminals: p, n
     """
     def __init__(self, instance_name, parent_cell, L):
@@ -129,6 +129,36 @@ class inductor(CellPN):
         self.n = self.add_terminal("n")
         # Add properties
         self.add_parameters({'l': num2string(L)})
+
+class mind(Cell):
+    """
+    Mutual Inductor (mind)
+    terminals: None
+
+    Parameters
+    ----------
+    instance_name : str
+    Name of the mutual-inductor instance.
+
+    parent_cell : Cell
+    Parent schematic cell.
+
+    L0 : str
+    Instance name of the first inductor.
+
+    L1 : str
+    Instance name of the second inductor.
+
+    k : float
+    Coupling coefficient.
+    """
+    def __init__(self, instance_name, parent_cell, L0, L1, k):
+        # Call super init
+        super().__init__('mutual_inductor', instance_name, parent_cell, declare=False, library_name="analog_lib")
+        # Add properties
+        self.add_parameters({'ind1': L0})
+        self.add_parameters({'ind2': L1})
+        self.add_parameters({'coupling': num2string(k)})
 
 class idc(CellPN):
     """

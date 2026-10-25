@@ -13,9 +13,13 @@ import shutil
 import tempfile
 
 # fastpsf reads psfascii, psfbin and psfbinf lazily and selectively. Without it, psf_utils
-# reads psfascii only, and every signal is loaded by parse().
+# reads psfascii only, and every signal is loaded by parse(). A fastpsf too old for PADE
+# (without PSF.load) counts as not installed.
 try:
     from fastpsf.compat import PSF, Quantity
+    if not hasattr(PSF, 'load'):
+        warn('The installed fastpsf is too old for PADE (no PSF.load): reading results with psf_utils. Install a newer fastpsf wheel')
+        raise ImportError('fastpsf too old')
     HAVE_FASTPSF = True
 except ImportError:
     from psf_utils import PSF, Quantity

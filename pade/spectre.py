@@ -12,12 +12,9 @@ OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf']
 
 
 def default_output_format():
-    """psfbin when fastpsf is installed, else psfascii (all psf_utils reads)"""
-    try:
-        import fastpsf
-        return 'psfbin'
-    except ImportError:
-        return 'psfascii'
+    """psfbin when PSFParser reads with fastpsf, else psfascii (all psf_utils reads)"""
+    from pade.psf_parser import HAVE_FASTPSF
+    return 'psfbin' if HAVE_FASTPSF else 'psfascii'
 
 
 def format_options(output_format, command_options):

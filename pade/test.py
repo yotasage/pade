@@ -26,6 +26,10 @@ class Test:
         self.output_selections = kwargs['output_selections'] if 'output_selections' in kwargs else []
         self.skip_sim = kwargs.get('skip_sim', False)
         self.skip_parse = kwargs.get('skip_parse', False)
+        # Spectre output format: 'psfbin' (default with fastpsf), 'psfascii' or 'psfbinf'
+        self.output_format = kwargs.get('output_format')
+        # Signals to read when parsing: None (only what expressions use), 'all', a list or a dict (see PSFParser.parse)
+        self.load = kwargs.get('load')
         # Add all signal names from expressions
         self.append_netlist = kwargs['append_netlist'] if 'append_netlist' in kwargs else []
         self.global_nets = kwargs['global_nets'] if 'global_nets' in kwargs else '0'
@@ -49,8 +53,9 @@ class Test:
         mkdir(self.log_dir, self.netlist_dir, self.output_dir, self.log_dir, self.html_dir, self.latex_dir, self.res_dir, self.log_dir, self.skill_dir)
 
         # command options
+        # The output format (-format) is added by the simulator from output_format, unless given here
         self.command_options = [
-            '-f', 'psfascii', '-log', '-ahdllibdir', self.sim_data_dir]
+            '-log', '-ahdllibdir', self.sim_data_dir]
         if 'command_options' in kwargs:
             for opt in kwargs['command_options']:
                 self.command_options.append(opt)
@@ -68,6 +73,7 @@ class Test:
             analyses,
             self.sim_name,
             command_options=self.command_options,
+            output_format=self.output_format,
             output_selections=self.output_selections,
             corner=self.corner,
             global_nets=self.global_nets,
@@ -108,7 +114,7 @@ class Test:
             display('Debug mode active: Terminating Program')
             quit()
         if not self.skip_parse:
-            parser.parse()
+            parser.parse(load=self.load)
 
         # Store signals
         self.signals = parser.signals
@@ -118,8 +124,15 @@ class Test:
     def evaluate(self, expressions=None):
         expressions = self.expressions if expressions is None else expressions
         parser = self.parser
-        # Verify that signals in expression exist in parser
         e_names = [e.name for e in expressions]
+        # Read all signals the expressions use, in one pass per result file
+        wanted = {}
+        for e in expressions:
+            for signal in e.signal_names:
+                if not signal in e_names:
+                    wanted.setdefault(e.analysis_name, []).append(signal)
+        parser.load(wanted, missing_ok=True)
+        # Verify that signals in expression exist in parser
         for e in expressions:
             signal_names = e.signal_names
             analysis = e.analysis_name

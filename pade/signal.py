@@ -146,7 +146,8 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
                     traces.append(input)
                     namestr += num2string(input, decimals=1)
                 elif isinstance(input, self.__class__):
-                    quantities.append(input.trace * input.unit)
+                    # The unit is found on a one-value sample; a full-size Quantity would copy the trace
+                    quantities.append(np.asarray(input.trace).flat[:1] * input.unit)
                     traces.append(input.trace)
                     namestr += input.name if input.name else ''
                     analysis = input.analysis if input.analysis else None

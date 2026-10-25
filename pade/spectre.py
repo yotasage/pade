@@ -485,12 +485,17 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
                 if event.progress is not None:
                     p0 = _update_progress_bar(tq, p0, event.progress, sim_name, state.analysis, state, last_changed=last_changed, corner=corner)
                     break
+
+                # If analysis without progress starts, break to start spectre_sim.log
+                if 'dc' in state.analysis:
+                    break
                 
                 # Otherwise, update progress based on status changes
                 elif last_changed:
                     setup_progress = state.status * 25 # Compute progress
                     p0 = _update_progress_bar(tq, p0, setup_progress, sim_name, state.analysis, state, last_changed=last_changed, corner=corner)
 
+        progress = 0
         with open(log_file_sim, 'w', encoding='utf-8', errors='replace') as f:
             f.write(line_s) # Write progress line from before.
 

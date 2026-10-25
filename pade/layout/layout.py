@@ -611,7 +611,7 @@ class LayoutInstance:
         return getattr(self, key)
 
     def __getattr__(self, item):
-        # Check if it is a coordinate       
+        # Check if it is a coordinate
         try:
             # Check if it is a property that can be transformed (like a box or coordinate)
             prop = self.get_transform_property(item)

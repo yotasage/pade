@@ -44,12 +44,27 @@ class Option:
     """
     General option to append to netlist
     """
+
+    cnt = 0
+
     def __init__(self, option_string):
         self.option_string = option_string
 
     def get_netlist_string(self):
         return self.option_string
 
+class Check:
+    """
+    General checks to append to netlist
+    """
+
+    cnt = 0
+
+    def __init__(self, check_string):
+        self.check_string = check_string
+
+    def get_netlist_string(self):
+        return self.check_string
 
 class pss(Analysis):
     """
@@ -170,7 +185,8 @@ class ac(Analysis):
             p[param] = parameters[param]
         super().__init__(name, type='ac', parameters=p)
 
-
+# noise ( net2 VSS ) noise start=1m stop=1k annotate=status
+# noise noise start=1m stop=1k oprobe=V3 annotate=status
 class noise(Analysis):
     """
     Noise Analysis

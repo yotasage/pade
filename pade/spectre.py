@@ -7,14 +7,42 @@ from pade import display, succeed, fatal, warn
 from datetime import datetime
 from dataclasses import dataclass
 
+# Output formats PSFParser reads (psfbin and psfbinf need fastpsf)
+OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf']
+
+
+def default_output_format():
+    """psfbin when fastpsf is installed, else psfascii (all psf_utils reads)"""
+    try:
+        import fastpsf
+        return 'psfbin'
+    except ImportError:
+        return 'psfascii'
+
+
+def format_options(output_format, command_options):
+    """
+    Spectre options selecting the output format: ['-format', output_format], or nothing if
+    command_options already choose one with -f or -format (those win)
+    """
+    tokens = ' '.join(str(o) for o in command_options).split()
+    if '-f' in tokens or '-format' in tokens:
+        return []
+    if output_format is None:
+        output_format = default_output_format()
+    if output_format not in OUTPUT_FORMATS:
+        raise ValueError(f'output_format {output_format!r} is not supported; use one of {OUTPUT_FORMATS}')
+    return ['-format', output_format]
+
+
 class Spectre(object):
     """
     For spectre simulations on remote server
     """
-    def __init__(self, netlist_dir, output_dir, log_dir, design, analyses, sim_name, output_selections=[], command_options=['-format', 'psfascii', '++aps', '+mt', '-log'], **kwargs):
+    def __init__(self, netlist_dir, output_dir, log_dir, design, analyses, sim_name, output_selections=[], command_options=['++aps', '+mt', '-log'], output_format=None, **kwargs):
 
         # Set command options that will append to the spectre command
-        self.command_options = command_options
+        self.command_options = format_options(output_format, command_options) + list(command_options)
         self.output_selections = output_selections
         # paths and names
         self.design = design # Netlist/design cell name
@@ -427,9 +455,10 @@ def parse_spectre_line(line_s: str) -> LogEvent:
 
     return event
 
-def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, **kwargs):
+def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, output_format=None, **kwargs):
         # Build spectre command
-        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} -f psfascii -log -ahdllibdir {simulation_raw_dir} "
+        fmt = " ".join(format_options(output_format, command_options))
+        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} {fmt} -log -ahdllibdir {simulation_raw_dir} "
         for cmd in command_options:
             popen_cmd += f"{cmd} "
 
@@ -550,10 +579,11 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
         display("SPECTRE SIMULATION COMPLETE")
         display(f"Raw data directory: {simulation_raw_dir}")
 
-def run_spectre(netlist_path, log_dir, simulation_raw_dir, command_options=[], **kwargs):
+def run_spectre(netlist_path, log_dir, simulation_raw_dir, command_options=[], output_format=None, **kwargs):
         # Build spectre command
         log_file = to_path(log_dir, 'spectre_sim.log')
-        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} -f psfascii =log {log_file} -ahdllibdir {simulation_raw_dir} "
+        fmt = " ".join(format_options(output_format, command_options))
+        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} {fmt} =log {log_file} -ahdllibdir {simulation_raw_dir} "
         for cmd in command_options:
             popen_cmd += f"{cmd} "
 

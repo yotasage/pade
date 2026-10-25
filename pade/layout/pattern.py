@@ -347,6 +347,9 @@ class Box:
     def to_list(self, decimals=0):
         return [self.origin.to_list(decimals=decimals), self.opposite_corner().to_list(decimals=decimals)]
 
+    def route_width(self):
+        return min(self.w, self.h)
+
     def area(self):
         return np.abs(self.diagonal[0] * self.diagonal[1])
 
@@ -370,6 +373,22 @@ class Box:
         box._update_center()
 
         return box
+    
+    def min_corner(self):
+        return self.origin
+    
+    def max_corner(self):
+        return self.opposite_corner()
+
+    def bounds(self):
+        '''[xmin, ymin], [xmax, ymax]'''
+        return [
+            self.origin,
+            self.opposite_corner(),
+        ]
+    
+    diagonal_corners = bounds
+    opposite_corners = bounds
 
     def rotate(self, angle, rotate_origin=False, in_place=False):
         """

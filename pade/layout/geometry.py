@@ -5,6 +5,7 @@ from typing import Iterable, Union
 class Coordinate:
 
     DBU = 0.001
+    # DECIMALS = 3
 
     # Manual immutability
     __slots__ = ("_x", "_y")  # optional, but makes instances smaller and faster
@@ -50,6 +51,20 @@ class Coordinate:
         x = round(self.x/Coordinate.DBU, decimals)*Coordinate.DBU
         y = round(self.y/Coordinate.DBU, decimals)*Coordinate.DBU
         return Coordinate(x, y)
+    
+    # def aligned_to_DBU(self, decimals=None, dbu=None):
+    #     '''
+    #     Aligns the coordinate to the GRID / DBU. This prevents DRC errors such as (OFF GRID)
+    #     '''
+    #     if decimals is None: decimals = Coordinate.DECIMALS
+    #     if dbu is None: dbu = Coordinate.DBU
+
+    #     x_dbu = round(self.x/dbu)
+    #     y_dbu = round(self.y/dbu)
+
+    #     x = round(x_dbu*dbu, decimals)
+    #     y = round(y_dbu*dbu, decimals)
+    #     return Coordinate(x, y)
 
     def to_skill(self, decimals=0):
         c = self.aligned_to_DBU(decimals=decimals)

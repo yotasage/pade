@@ -284,20 +284,24 @@ class LayoutItem:
         self.add_pattern(ring_pattern)
         return Ring(ring_pattern)
 
-    def get_all_instances(self, recursive=False, depth=-2):
+    def get_all_instances(self, recursive=False, depth=-2, always_include_self=False):
         """
         Returns all instances in cell_view as LayoutInstance objects
         """
         instance_list = []
+        if always_include_self: instance_list.append(self)
         if (depth <= -2): depth = -2 # Continue until the end.
-        elif (depth == -1): return [] # Finished
+        elif (depth == -1): return instance_list # Finished
 
         temp_list = [LayoutInstance(i) for i in self.cell_view.instances]
+        instance_list += temp_list
         if recursive:
             for inst in temp_list:
                 instance_list += inst.get_all_instances(recursive=True, depth=depth-1)
-        else:
-            instance_list = temp_list
+
+            if (len(instance_list) == 0 and not always_include_self):
+                instance_list.append(self)
+
         return instance_list
 
     def get_instance(self, instance_name):
@@ -364,6 +368,10 @@ class LayoutItem:
         """
         if self.cell_view is None:
             self.open_layoutview()
+
+        if self.cell_view is None:
+            # TODO: Figure out how to make sure that this is the problem, and/or add other reasons for this problem, and provide good errors.
+            raise RuntimeError(f"self.cell_view is None. This might be because the instance name of {self}, instance_name={instance.instance_name}, is the same as another cell's instance name.")
 
         instance_id = self.ws.db.create_inst_by_master_name(self.cell_view, instance.lib_name, instance.cell_name, 'layout', instance.instance_name, instance.origin.to_list(), instance.orientation)
 
@@ -510,6 +518,50 @@ class LayoutInstance:
         if (properties is not None): lay_inst.set_properties(properties)
 
         return lay_inst
+    
+    @staticmethod
+    def from_lib(parent_layout_item: LayoutItem, **kwargs):
+        """
+        Instantiate from pade.Cell
+        Particularily suited for kit models
+        """
+        lib_name = kwargs.get('lib_name', None)
+        cell_name = kwargs.get('cell_name', None)
+        instance_name = kwargs.get('instance_name', None)
+
+        properties = kwargs.pop('properties', None)
+        
+        lay_item = LayoutItem(lib_name, cell_name, instance_name)
+
+        origin = kwargs.get('origin', Coordinate((0,0)))
+        lay_item.origin = origin
+        # Print this layout item in paren layout
+        lay_inst = parent_layout_item.print_instance(lay_item)
+        # edit all cdf parameters of cell in instance
+        # for name, param in cell.parameters.items():
+        #     if param.is_CDF:
+        #         try:
+        #             lay_inst.edit_cdf_param(name, param.value)
+        #         except:
+        #             pass
+
+        # Add extra CDF parameters
+        cdf_params = kwargs.get('CDF_params', {})
+        for name, param in cdf_params.items():
+            lay_inst.edit_cdf_param(name, param.value)
+
+        # Update inst transform
+        lay_inst.update_transform(lay_inst.inst.transform)
+        lay_inst.set_box()
+
+        # Keep track of parents transforms
+        lay_inst.parent_transform = kwargs.get('transform')
+        lay_inst.update_transform(lay_inst.inst.transform)
+
+        lay_inst.set_properties(lay_item.property_list)
+        if (properties is not None): lay_inst.set_properties(properties)
+
+        return lay_inst
 
     def __init__(self, instance_id, **kwargs) -> None:
         self.inst = instance_id
@@ -559,7 +611,7 @@ class LayoutInstance:
         return getattr(self, key)
 
     def __getattr__(self, item):
-        # Check if it is a coordinate
+        # Check if it is a coordinate       
         try:
             # Check if it is a property that can be transformed (like a box or coordinate)
             prop = self.get_transform_property(item)
@@ -622,9 +674,15 @@ class LayoutInstance:
         raise AttributeError(f'Failed to get {item} from {self}')
 
     def get_property(self, name):
-        for prop in self.inst.prop:
-            if prop.name == name:
-                return prop.value
+        # Why only get from prop? It sometimes fails, even if the instance actually has the property, but not in props. Like, b_box for instance.
+        properties = self.get_property_list()
+
+        if len(properties) > 0:
+            for pname, pvalue in properties: # self.inst.prop
+                if pname == name:
+                    return pvalue
+        else:
+            return getattr(self.inst, name)
             
     def get_properties(self):
         return self.inst.prop
@@ -680,25 +738,31 @@ class LayoutInstance:
             pass
         raise ValueError(f'Property {pname} could not be converted to Coordinate or Box')
 
-    def get_all_instances(self, recursive=False, depth=-2):
+    def get_all_instances(self, recursive=False, depth=-2, always_include_self=False):
         """
-        Returns all instances in master as LayoutInstance objects
+        Returns all instances in master as LayoutInstance objects. Returns a list with only the master if there are no sub instances.
         """
         instance_list = []
+        if always_include_self: instance_list.append(self)
         if (depth <= -2): depth = -2 # Continue until the end.
         elif (depth == -1): return instance_list # Finished
 
         try:
             temp_list = [LayoutInstance(i, transform=self.transform) for i in self.master.instances]
         except:
-            return [self]
+            temp_list = []
+        instance_list += temp_list
+
         if recursive:
             for inst in temp_list:
-                temp_list = inst.get_all_instances(recursive=True, depth=depth-1)
-                if inst in temp_list:
-                    inst.parent_cell = self
-                    instance_list.append(inst)
-            instance_list.append(self)
+                instance_list += inst.get_all_instances(recursive=True, depth=depth-1)
+                # if inst in temp_list:
+                #     inst.parent_cell = self
+                #     instance_list.append(inst)
+                    
+            if (len(instance_list) == 0 and not always_include_self):
+                instance_list.append(self)
+            
         return instance_list
 
     def get_name_from_top(self):
@@ -730,6 +794,7 @@ class LayoutInstance:
         else:
             self.transform = transform
 
+    # TODO: This should probably know how to handle Boxes and Coordinates.
     def set_property(self, name, value):
         self.ws.db.setq(self.inst, value, name)
 

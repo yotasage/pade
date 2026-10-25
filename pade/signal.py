@@ -5,6 +5,7 @@ from scipy.interpolate import interp1d
 import numpy as np
 import numpy.lib.mixins
 from numbers import Number
+from collections.abc import Iterable
 
 HANDLED_FUNCTIONS = {}
 def implements(np_function):
@@ -13,6 +14,12 @@ def implements(np_function):
        HANDLED_FUNCTIONS[np_function] = func
        return func
    return decorator
+
+# TODO: Not f'R({sig.name})' but ->
+# f'max({sig.name})'
+# f'min({sig.name})'
+# f'mean({sig.name})'
+# f'sum({sig.name})'
 
 @implements(np.imag)
 def imag(sig):
@@ -78,7 +85,7 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
     """
     def __init__(self, trace, unit, name=None, analysis=None, simulation=None, sweep=None, passed_spec=None):
         self.name = name
-        self.trace = trace
+        self.trace = np.asarray(trace)
         if isinstance(unit, str):
             unit = Q_(1, unit).units
         self.unit = unit
@@ -86,6 +93,14 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
         self.simulation = simulation
         self.sweep = sweep # bool
         self.passed_spec = passed_spec
+
+    @property
+    def shape(self):
+        return self.trace.shape
+
+    @property
+    def size(self):
+        return self.trace.size
 
     def __getitem__(self, item):
         try:
@@ -96,6 +111,9 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
              analysis=self.analysis, simulation=self.simulation, sweep=self.sweep)
 
     def __repr__(self):
+        # TODO: Consider the following as ChatGPT says Current repr breaks for vectors.
+        # if np.ndim(self.trace) > 0:
+        #   return f"Signal(name={self.name}, unit={self.unit}, shape={self.trace.shape})"
         if self.unit == '':
             return f'{num2string(self.trace, decimals=2)}'
         return "{:.2f~P}".format(self.to_quantity())
@@ -165,67 +183,111 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
     def get_unit(self):
         return self.unit
 
+    def logic_level(self, vdd):
+        return self.trace > 0.5*vdd
+
     def set_simulation(self, simulation):
         """
             Override simulation
         """
         self.simulation = simulation
 
+    def cross_time(self, x_sig, sweep):
+        y = self.trace
+        x = x_sig.trace if isinstance(x_sig, Signal) else x_sig
+        t = sweep.trace
+
+        sign = np.sign(y - x)
+        idx = np.where(np.diff(sign) != 0)[0]
+
+        crossings = []
+        for i in idx:
+            # linear interpolation
+            t0, t1 = t[i], t[i+1]
+            y0, y1 = y[i] - x[i], y[i+1] - x[i+1]
+
+            tc = t0 - y0*(t1-t0)/(y1-y0)
+            crossings.append(tc)
+
+        return np.array(crossings)
+    
+    def edges(self, threshold):
+        return self.all_cross(threshold)
+    
+    def edge_times(self, threshold, time):
+        rise, fall = self.all_cross(threshold)
+        t = time.trace
+
+        return t[rise], t[fall]
+    
+    def period(self, threshold, time):
+        rise, _ = self.all_cross(threshold)
+        t = time.trace[rise]
+
+        return np.diff(t)
+    
+    def edge_times(self, threshold, time):
+        rise, fall = self.all_cross(threshold)
+        t = time.trace
+        return t[rise], t[fall]
+
+    def delay_from(self, ref, threshold, time):
+        my = self.edge_times(threshold, time)[0]
+        ref = ref.edge_times(threshold, time)[0]
+
+        idx = np.searchsorted(ref, my) - 1
+        valid = idx >= 0
+
+        return my[valid] - ref[idx[valid]]
+    
+    def delay(self, ref_signal, threshold, time):
+        my_edges = self.all_cross(threshold)[0]
+        ref_edges = ref_signal.all_cross(threshold)[0]
+
+        idx = np.searchsorted(ref_edges, my_edges) - 1
+        valid = idx >= 0
+
+        t = time.trace
+
+        return t[my_edges[valid]] - t[ref_edges[idx[valid]]]
+
     def cross(self, x_sig, edge='Both'):
         """
             Return the first index where self crosses x_sig
         """
-        x = x_sig.trace if isinstance(x_sig, Signal) else x_sig
-        y = self.trace
-        # Verify that the two traces are of same length
-        if not len(self.trace) == len(x_sig):
-            raise ValueError('x and y signal must be of same length')
-        # Verify valid edge
-        if not edge.lower() in ['rising', 'falling', 'both']:
-            raise ValueError(f'Unvalid edge {edge}')
+        rising, falling = self.all_cross(x_sig)
 
-        sign = lambda x: 1 if x>0 else -1
-        sign0 = sign(y[0]-x[0])
-        for i in range(1, len(y)):
-            sign1 = sign(y[i]-x[i])
-            dsign = sign1 - sign0
-            # If dsign > 0, we have a rising edge
-            if dsign > 0 and edge.lower() in ['rising', 'both']:
-                return i
-            # If dsign < 0, we have a falling edge
-            if dsign < 0 and edge.lower() in ['falling', 'both']:
-                return i
-            sign0 = sign1
-        # If it never crossed
-        return np.nan
+        edge = edge.lower()
+
+        if edge == 'rising':
+            return rising[0] if len(rising) else np.nan
+
+        if edge == 'falling':
+            return falling[0] if len(falling) else np.nan
+
+        if edge == 'both':
+            edges = np.sort(np.concatenate((rising, falling)))
+            return edges[0] if len(edges) else np.nan
+
+        raise ValueError(f'Invalid edge type: {edge}')
 
     def all_cross(self, x_sig):
         """
-            Return the all indices where self crosses x_sig
+            Return all indices where self crosses x_sig.
+            return: [[rise_indices], [fall_indices]]
         """
-        x = x_sig.trace if isinstance(x_sig, Signal) else x_sig
         y = self.trace
-        irise_list = []
-        ifall_list = []
-        # Verify that the two traces are of same length
-        if not len(self.trace) == len(x_sig):
-            raise ValueError('x and y signal must be of same length')
+        x = x_sig.trace if isinstance(x_sig, Signal) else x_sig
 
-        sign = lambda x: 1 if x>0 else -1
-        sign0 = sign(y[0]-x[0])
-        for i in range(1, len(y)):
-            sign1 = sign(y[i]-x[i])
-            dsign = sign1 - sign0
-            # If dsign > 0, we have a rising edge
-            if dsign > 0:
-                irise_list.append(i)
-                sign0 = sign1
-            # If dsign < 0, we have a falling edge
-            if dsign < 0:
-                ifall_list.append(i)
-                sign0 = sign1
-        # If it never crossed
-        return irise_list, ifall_list
+        diff = y - x
+        s = np.sign(diff)
+
+        ds = np.diff(s)
+
+        rising = np.where(ds > 0)[0] + 1
+        falling = np.where(ds < 0)[0] + 1
+
+        return rising, falling
 
     def at(self, x_sig, x_val, name=None, **kwargs):
         """
@@ -249,8 +311,7 @@ class Signal(numpy.lib.mixins.NDArrayOperatorsMixin):
         """
             Return index corresponding to value of self that is closest to xval
         """
-        idx = int((np.abs(self.trace - x_val)).argmin())
-        return idx
+        return np.argmin(np.abs(self.trace - x_val))
 
     def grad(self, x, name=None):
         """

@@ -84,6 +84,8 @@ class Route:
     Route. May contain several path segments and vias
     """
 
+    # TODO: Add CVIA default params
+
     # Class-level callback (shared by all instances)
     get_layer_name: ClassVar[Optional[Callable[[Layer], str]]] = None
     get_via_names: Optional[Callable[[Layer, Layer, bool], List[str]]] = None
@@ -113,6 +115,8 @@ class Route:
         self.ncvias = kwargs.get('ncvias') # Corner vias
         self.cvia_rows = kwargs.get('cvia_rows') # Corner vias direction
         self.cvia_cols = kwargs.get('cvia_cols') # Corner vias direction
+        self.cvia_flip = kwargs.get('cvia_flip', False) # When using default cvia rows and cols, flip orient.
+        self.cvia_offset = kwargs.get('cvia_offset', [0, 0]) # When using default cvia rows and cols, flip orient.
         if isinstance(start, Port):
             # If port, use center
             self.start = start.box.center
@@ -123,11 +127,13 @@ class Route:
         elif isinstance(start, Path):
             self.start = start.get_box().center
             self.layer = start.layer
-            self.width = min(start.get_box().w, start.get_box().h)
+            self.width = start.get_box().route_width()
         elif isinstance(start, Box):
             self.start = start.center
         elif isinstance(start, Route):
             self.start = start.path_list[0].get_box().center
+            self.layer = start.layer
+            self.width = start.width
         else:
             self.start = Coordinate(start)
 
@@ -402,6 +408,9 @@ class Route:
             if self.ncvias is None:
                 nrows = 2 if orient == 'v' else 1
                 ncols = 2 if orient == 'h' else 1
+
+                if self.cvia_flip:
+                    nrows, ncols = ncols, nrows
             else:
                 nrows = ncols = self.ncvias
             if not self.cvia_cols is None:
@@ -426,7 +435,7 @@ class Route:
                 via_names = [f'M{m1}_M{m0}']
 
             for via_name in via_names:
-                via = Via(via_name, center=pos, n_rows=nrows, n_cols=ncols)
+                via = Via(via_name, center=pos, n_rows=nrows, n_cols=ncols, offset=self.cvia_offset)
                 self._add_via(via)
         except:
             return
@@ -435,106 +444,113 @@ class Route:
         """
         Route vertically, then horisontally
         """
+        lidx = 0 # layer_index
+
         # First handle offset
         r_start = self.start
-        r_stop = self.stop
+        r_stop = self.stop + (0, self.offset_end)
         if self.offset != 0:
-            if np.abs(self.offset) > 1.0:
-                # As this route starts vertically, assume offset is horisontally
-                p0 = Path(self.get_layer(1), self.start, dx=self.offset, width=self.width, purpose=self.purpose)
-                self.add_path(p0)
-                # Update r_start
-                r_start += (self.offset, 0)
-                # Add corner via
-                self.add_corner_via(p0.stop, 'v')
-            else:
-                # As this route starts vertically, assume offset is horisontally
-                p0 = Path(self.get_layer(0), self.start, dx=self.offset, width=self.width, purpose=self.purpose)
-                self.add_path(p0)
-                # Update r_start
-                r_start += (self.offset, 0)
+            lay0 = self.get_layer(lidx)
+            lay1 = self.get_layer(lidx + 1)
+            lidx = lidx + 1
 
-        p_end = None
-        if self.offset_end != 0:
-            # As this route ends horisontally, assume end offset is vertical
-            p_end = Path(self.get_layer(0), r_stop+(0, self.offset_end), dy=-self.offset_end, width=self.width, purpose=self.purpose)
-            # Update r_stop
-            r_stop += (0, self.offset_end)
-            # Add corner via
-            self.add_corner_via(p_end.start, 'h')
+            # As this route starts vertically, assume offset is horisontally
+            p0 = Path(lay0, self.start, dx=self.offset, width=self.width, purpose=self.purpose)
+            self.add_path(p0)
+            r_start += (self.offset, 0)
+            self.add_corner_via(p0.stop, 'v', layer0=lay0, layer1=lay1)
 
         vector = r_stop - r_start
-        dy=vector[1]
-        dx=vector[0]
-        p1 = Path(self.get_layer(0), r_start, dy=dy, width=self.width, purpose=self.purpose)
+        dy = vector[1]
+        dx = vector[0]
+
+        lay0 = self.get_layer(lidx)
+        lay1 = self.get_layer(lidx + 1)
+        lidx = lidx + 1
+
+        p1 = Path(lay0, r_start, dy=dy, width=self.width, purpose=self.purpose)
         if not dy == 0:
             self.add_path(p1)
             # Add corner via
-            self.add_corner_via(p1.stop, 'v')
+            self.add_corner_via(p1.stop, 'v', layer0=lay0, layer1=lay1)
         if not dx == 0:
-            p2 = Path(self.get_layer(1), p1.stop, dx=dx, width=self.width, purpose=self.purpose)
+            lidx = lidx + 1
+            p2 = Path(lay1, p1.stop, dx=dx, width=self.width, purpose=self.purpose)
             self.add_path(p2)
-        if not p_end is None:
+        
+        if self.offset_end != 0:
+            lay0 = self.get_layer(lidx)
+            lay1 = self.get_layer(lidx - 1)
+            # As this route ends horisontally, assume end offset is vertical
+            p_end = Path(lay0, r_stop, dy=-self.offset_end, width=self.width, purpose=self.purpose)
             self.add_path(p_end)
+            # Add corner via
+            self.add_corner_via(p_end.start, 'h', layer0=lay0, layer1=lay1)
+
+            
 
     def route_hv(self):
         """
         Route horisontally, then vertically
         """
+        lidx = 0 # layer_index
+
         r_start = self.start
-        r_stop = self.stop
+        r_stop = self.stop + (self.offset_end, 0)
 
         # First handle offset
         if self.offset != 0:
-            if np.abs(self.offset) > 1.0:
-                # As this route starts horisontally, assume self.offset is vertically
-                p0 = Path(self.get_layer(1), r_start, dy=self.offset, width=self.width, purpose=self.purpose)
-                self.add_path(p0)
-                # Update r_start
-                r_start += (0, self.offset)
-                # Add corner via
-                self.add_corner_via(p0.stop, 'v')
-            else:
-                # As this route starts horisontally, assume self.offset is vertically
-                p0 = Path(self.get_layer(0), r_start, dy=self.offset, width=self.width, purpose=self.purpose)
-                self.add_path(p0)
-                # Update r_start
-                r_start += (0, self.offset)
+            lay0 = self.get_layer(lidx)
+            lay1 = self.get_layer(lidx + 1)
+            lidx = lidx + 1
 
-        p_end = None
-        if self.offset_end != 0:
-            # As this route ends vertically, assume end offset is horisontal
-            p_end = Path(self.get_layer(0), r_stop+(self.offset_end,0), dx=-self.offset_end, width=self.width, purpose=self.purpose)
-            # Update r_stop
-            r_stop += (self.offset_end, 0)
-            # Add corner via
-            self.add_corner_via(p_end.start, 'h')
+            # As this route starts horisontally, assume self.offset is vertically
+            p0 = Path(lay0, r_start, dy=self.offset, width=self.width, purpose=self.purpose)
+            self.add_path(p0)
+            r_start += (0, self.offset)
+            self.add_corner_via(p0.stop, 'v', layer0=lay0, layer1=lay1)
 
         vector = r_stop - r_start
         dy=vector[1]
         dx=vector[0]
         # dx = dx  - self.width/2 if dx > 0 else dx + self.width/2
-        p1 = Path(self.get_layer(0), r_start, dx=dx, width=self.width, purpose=self.purpose)
+        lay0 = self.get_layer(lidx)
+        lay1 = self.get_layer(lidx + 1)
+        lidx = lidx + 1
+
+        p1 = Path(lay0, r_start, dx=dx, width=self.width, purpose=self.purpose)
         if not dx == 0:
             self.add_path(p1)
             # Add corner via
-            self.add_corner_via(p1.stop, 'v')
+            self.add_corner_via(p1.stop, 'v', layer0=lay0, layer1=lay1)
         if not dy == 0:
-            p2 = Path(self.get_layer(1), p1.stop, dy=dy, width=self.width, purpose=self.purpose)
+            lidx = lidx + 1
+            p2 = Path(lay1, p1.stop, dy=dy, width=self.width, purpose=self.purpose)
             self.add_path(p2)
-
-        if not p_end is None:
+        
+        if self.offset_end != 0:
+            lay0 = self.get_layer(lidx)
+            lay1 = self.get_layer(lidx - 1)
+            # As this route ends vertically, assume end offset is horisontal
+            p_end = Path(lay0, r_stop, dx=-self.offset_end, width=self.width, purpose=self.purpose)
             self.add_path(p_end)
+            # Add corner via
+            self.add_corner_via(p_end.start, 'h', layer0=lay0, layer1=lay1)
+            
 
     def route_h(self):
         """
         Horizontal route.
         """
+
+        layer0 = self.get_layer(0)
+        layer1 = self.get_layer(1)
+
         r_start = self.start
         # First handle offset
         if self.offset != 0:
             # As this route starts horisontally, assume self.offset is vertically
-            p0 = Path(self.get_layer(0), r_start, dy=self.offset, width=self.width, purpose=self.purpose)
+            p0 = Path(layer0, r_start, dy=self.offset, width=self.width, purpose=self.purpose)
             self.add_path(p0)
             # Update r_start
             r_start += (0, self.offset)
@@ -544,16 +560,21 @@ class Route:
 
         dx = self.stop[0] - r_start[0]
         if dx != 0:
-            self.add_path(Path(self.get_layer(0), r_start, dx=dx, width=self.width, purpose=self.purpose))
+            p = self.add_path(Path(layer1, r_start, dx=dx, width=self.width, purpose=self.purpose))
+            self.add_corner_via(p.start, 'h', layer0, layer1)
 
     def route_v(self):
         """
         Vertical route.
         """
+
+        layer0 = self.get_layer(0)
+        layer1 = self.get_layer(1)
+
         r_start = self.start
         if self.offset != 0:
             # As this route starts vertically, assume offset is horisontally
-            p0 = Path(self.get_layer(0), self.start, dx=self.offset, width=self.width, purpose=self.purpose)
+            p0 = Path(layer0, self.start, dx=self.offset, width=self.width, purpose=self.purpose)
             self.add_path(p0)
         # Update r_start
         r_start += (self.offset, 0)
@@ -563,7 +584,8 @@ class Route:
 
         dy = self.stop[1] - r_start[1]
         if dy != 0:
-            self.add_path(Path(self.get_layer(0), r_start, dy=dy, width=self.width, purpose=self.purpose))
+            p = self.add_path(Path(layer1, r_start, dy=dy, width=self.width, purpose=self.purpose))
+            self.add_corner_via(p.start, 'h', layer0, layer1)
 
     def route_custom_h(self):
         """
@@ -771,6 +793,13 @@ class Port:
     """
     Port on Layout. Generates a figure(rect), net, terminal and a pin
     """
+
+    # Class-level callback (shared by all instances)
+    get_layer_name: ClassVar[Optional[Callable[[Layer], str]]] = None
+
+    # Assign as staticmethod to prevent binding to self
+    get_layer_name = staticmethod(get_layer_name)
+
     def __init__(self, name, *args, **kwargs) -> None:
         if isinstance(name, Terminal):
             self.name = name.name
@@ -808,6 +837,9 @@ class Port:
         else:
             raise ValueError('Invalid input arguments')
         
+        if type(self).get_layer_name is not None:
+            self.layer = type(self).get_layer_name(self.layer)
+
         self.box.set_origin(center=self.position)
 
     def _init_from_route(self, route, **kwargs):

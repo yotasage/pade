@@ -13,18 +13,24 @@ import re
 import shutil
 import tempfile
 
-# fastpsf reads psfascii, psfbin and psfbinf lazily and selectively. Without it, psf_utils
-# reads psfascii only, and every signal is loaded by parse(). A fastpsf too old for PADE
-# (without PSF.load) counts as not installed.
+# kymograf reads psfascii, psfbin and psfbinf lazily and selectively. Without it, psf_utils
+# reads psfascii only, and every signal is loaded by parse(). Until kymograf is installed, a
+# fastpsf (kymograf's name before 2026-10-26) is used, unless it is too old for PADE (no
+# PSF.load).
 try:
-    from fastpsf.compat import PSF, Quantity
-    if not hasattr(PSF, 'load'):
-        warn('The installed fastpsf is too old for PADE (no PSF.load): reading results with psf_utils. Install a newer fastpsf wheel')
-        raise ImportError('fastpsf too old')
-    HAVE_FASTPSF = True
+    from kymograf.compat import PSF, Quantity
+    HAVE_KYMOGRAF = True
 except ImportError:
-    from psf_utils import PSF, Quantity
-    HAVE_FASTPSF = False
+    try:
+        from fastpsf.compat import PSF, Quantity
+        if not hasattr(PSF, 'load'):
+            warn('The installed fastpsf is too old for PADE (no PSF.load): reading results with psf_utils. Install the kymograf wheel')
+            raise ImportError('fastpsf too old')
+        warn('Reading results with fastpsf, the old name of kymograf: install the kymograf wheel and uninstall fastpsf')
+        HAVE_KYMOGRAF = True
+    except ImportError:
+        from psf_utils import PSF, Quantity
+        HAVE_KYMOGRAF = False
 
 
 class _Pending:
@@ -92,9 +98,9 @@ class SignalDict(MutableMapping):
 
 class PSFParser(object):
     """
-    Helper class for parsing PSF result files (psfascii, and with fastpsf psfbin and psfbinf).
+    Helper class for parsing PSF result files (psfascii, and with kymograf psfbin and psfbinf).
 
-    With fastpsf installed, parse() reads only the declarations of each result file (names,
+    With kymograf installed, parse() reads only the declarations of each result file (names,
     units, sweeps), and signal values are read when first used, or all at once by load().
     Result files are never modified.
     """
@@ -116,11 +122,11 @@ class PSFParser(object):
             load: None, 'all', list or dict
                 Signals to read now, in one pass per result file:
                 None (default) reads no values until they are used;
-                'all' reads everything (as before fastpsf);
+                'all' reads everything (as before kymograf);
                 a list of names or glob patterns, e.g. ['vout', 'I0.*'], applies to every analysis;
                 a dict chooses per analysis, e.g. {'tran': ['vout', 'time'], 'ac': 'all'}.
                 More can be read later with load().
-                Without fastpsf every signal is read regardless.
+                Without kymograf every signal is read regardless.
         """
         raw_files = ls(self.output_dir)
 
@@ -132,7 +138,7 @@ class PSFParser(object):
             analysis_name = filename.split('.')[0]
             display(f'PARSING PSF FILE: {filename} ({self.sim_name})')
 
-            if HAVE_FASTPSF:
+            if HAVE_KYMOGRAF:
                 self._open(file, analysis_name)
             else:
                 self._parse_psf_utils(file, analysis_name)
@@ -156,9 +162,9 @@ class PSFParser(object):
                 self.signals[f'{self.sim_name}:{analysis_name}:{sweep.name}'] = _Pending(psf, sweep.name, analysis_name, True)
 
     def _parse_psf_utils(self, file, analysis_name):
-        """Without fastpsf: read everything with psf_utils"""
+        """Without kymograf: read everything with psf_utils"""
         if _is_binary(file):
-            warn(f'Could not parse file {file}: it is not psfascii. Install fastpsf to read psfbin results')
+            warn(f'Could not parse file {file}: it is not psfascii. Install kymograf to read psfbin results')
             return
         try:
             # Read a cache psf_utils wrote earlier, but write nothing next to the result file

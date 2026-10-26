@@ -7,14 +7,14 @@ from pade import display, succeed, fatal, warn
 from datetime import datetime
 from dataclasses import dataclass
 
-# Output formats PSFParser reads (psfbin and psfbinf need fastpsf)
+# Output formats PSFParser reads (psfbin and psfbinf need kymograf)
 OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf']
 
 
 def default_output_format():
-    """psfbin when PSFParser reads with fastpsf, else psfascii (all psf_utils reads)"""
-    from pade.psf_parser import HAVE_FASTPSF
-    return 'psfbin' if HAVE_FASTPSF else 'psfascii'
+    """psfbin when PSFParser reads with kymograf, else psfascii (all psf_utils reads)"""
+    from pade.psf_parser import HAVE_KYMOGRAF
+    return 'psfbin' if HAVE_KYMOGRAF else 'psfascii'
 
 
 def format_options(output_format, command_options):

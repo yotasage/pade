@@ -32,5 +32,5 @@ dependencies = [
 
 [project.optional-dependencies]
 # Lazy, selective reading of psfascii, psfbin and psfbinf results. Not on PyPI:
-# install the wheel from the fastpsf build (pip install fastpsf-<version>-<platform>.whl)
-fastpsf = ['fastpsf']
+# install the wheel from the kymograf build (pip install kymograf-<version>-<platform>.whl)
+kymograf = ['kymograf']

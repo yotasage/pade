@@ -26,7 +26,7 @@ class Test:
         self.output_selections = kwargs['output_selections'] if 'output_selections' in kwargs else []
         self.skip_sim = kwargs.get('skip_sim', False)
         self.skip_parse = kwargs.get('skip_parse', False)
-        # Spectre output format: 'psfbin' (default with fastpsf), 'psfascii' or 'psfbinf'
+        # Spectre output format: 'psfbin' (default with kymograf), 'psfascii' or 'psfbinf'
         self.output_format = kwargs.get('output_format')
         # Signals to read when parsing: None (only what expressions use), 'all', a list or a dict (see PSFParser.parse)
         self.load = kwargs.get('load')

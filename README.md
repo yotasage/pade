@@ -11,8 +11,8 @@ venv:
 
 (or `pip install --find-links <folder with the wheel> ".[kymograf]"` from this directory).
 
-kymograf was called fastpsf until 2026-10-26. An installed fastpsf is still used, with a
-warning, until you replace it: `pip uninstall fastpsf`, then install the kymograf wheel.
+kymograf was called fastpsf until 2026-10-26. PADE no longer uses an installed fastpsf: run
+`pip uninstall fastpsf`, then install the kymograf wheel (without it, PADE reads with psf_utils).
 
 With kymograf:
 - `parse()` reads only names, units and sweeps. `Test.evaluate()` reads every signal its

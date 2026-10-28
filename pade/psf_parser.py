@@ -14,23 +14,13 @@ import shutil
 import tempfile
 
 # kymograf reads psfascii, psfbin and psfbinf lazily and selectively. Without it, psf_utils
-# reads psfascii only, and every signal is loaded by parse(). Until kymograf is installed, a
-# fastpsf (kymograf's name before 2026-10-26) is used, unless it is too old for PADE (no
-# PSF.load).
+# reads psfascii only, and every signal is loaded by parse().
 try:
     from kymograf.compat import PSF, Quantity
     HAVE_KYMOGRAF = True
 except ImportError:
-    try:
-        from fastpsf.compat import PSF, Quantity
-        if not hasattr(PSF, 'load'):
-            warn('The installed fastpsf is too old for PADE (no PSF.load): reading results with psf_utils. Install the kymograf wheel')
-            raise ImportError('fastpsf too old')
-        warn('Reading results with fastpsf, the old name of kymograf: install the kymograf wheel and uninstall fastpsf')
-        HAVE_KYMOGRAF = True
-    except ImportError:
-        from psf_utils import PSF, Quantity
-        HAVE_KYMOGRAF = False
+    from psf_utils import PSF, Quantity
+    HAVE_KYMOGRAF = False
 
 
 class _Pending:

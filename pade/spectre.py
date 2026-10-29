@@ -7,8 +7,8 @@ from pade import display, succeed, fatal, warn
 from datetime import datetime
 from dataclasses import dataclass
 
-# Output formats PSFParser reads (psfbin and psfbinf need kymograf)
-OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf']
+# Output formats PSFParser reads (psfbin, psfbinf and psfxl need kymograf)
+OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf', 'psfxl']
 
 
 def default_output_format():

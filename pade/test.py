@@ -1,7 +1,7 @@
 from distutils.command.config import config
 from typing import List
 from pade.psf_parser import PSFParser
-from pade.spectre import Spectre as Simulator
+from pade.spectre import Spectre as Simulator, NUTMEG_FORMATS
 from pade.evaluation import Evaluation, Expression
 from pade import *
 from shlib.shlib import lsf, rm, to_path, mkdir
@@ -26,7 +26,8 @@ class Test:
         self.output_selections = kwargs['output_selections'] if 'output_selections' in kwargs else []
         self.skip_sim = kwargs.get('skip_sim', False)
         self.skip_parse = kwargs.get('skip_parse', False)
-        # Spectre output format: 'psfbin' (default with kymograf), 'psfascii' or 'psfbinf'
+        # Spectre output format: 'psfbin' (default with kymograf), 'psfascii', 'psfbinf', 'psfxl';
+        # 'nutbin' or 'nutascii' write simulation_output/output.raw and are not parsed
         self.output_format = kwargs.get('output_format')
         # Signals to read when parsing: None (only what expressions use), 'all', a list or a dict (see PSFParser.parse)
         self.load = kwargs.get('load')
@@ -101,20 +102,27 @@ class Test:
         Parameters:
             cache: bool
                 If True, the simulation will not run if an identical netlist does already exist
+                (and the format and -raw are the same as in its last finished run)
         """
         sim = self.simulator
-        parser = PSFParser(self.output_dir, f'{self.sim_name}_{self.corner.name}')
+        # PSF results are read where Spectre wrote them (-raw from command_options wins)
+        nutmeg = sim.raw_format in NUTMEG_FORMATS
+        results_dir = self.output_dir if nutmeg else sim.raw_path
+        parser = PSFParser(results_dir, f'{self.sim_name}_{self.corner.name}')
         if not self.skip_sim:
             self.used_cache = sim.run(cache=cache)
         # Plot using skill
         if self.SkillPlot:
-            self.SkillPlot.plot(self.skill_dir, self.output_dir)
+            self.SkillPlot.plot(self.skill_dir, results_dir)
         # Terminate if debugging
         if self.debug:
             display('Debug mode active: Terminating Program')
             quit()
         if not self.skip_parse:
-            parser.parse(load=self.load)
+            if nutmeg:
+                warn(f'PSFParser does not read {sim.raw_format}: not parsed. Results: {sim.raw_path}')
+            else:
+                parser.parse(load=self.load)
 
         # Store signals
         self.signals = parser.signals

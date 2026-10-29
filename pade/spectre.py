@@ -9,6 +9,11 @@ from dataclasses import dataclass
 
 # Output formats PSFParser reads (psfbin, psfbinf and psfxl need kymograf)
 OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf', 'psfxl']
+# Formats Spectre writes as one file instead of a folder of result files. PSFParser does not
+# read them: the simulation runs, parsing is skipped
+NUTMEG_FORMATS = ['nutbin', 'nutascii']
+# The file a nutmeg run writes in the output folder, unless command_options give -raw
+NUTMEG_RAW_FILE = 'output.raw'
 
 
 def default_output_format():
@@ -17,19 +22,56 @@ def default_output_format():
     return 'psfbin' if HAVE_KYMOGRAF else 'psfascii'
 
 
+def _tokens(command_options):
+    return ' '.join(str(o) for o in command_options).split()
+
+
+def _option_value(tokens, names):
+    """The value after the last of names in tokens, or None"""
+    value = None
+    for i, t in enumerate(tokens[:-1]):
+        if t in names:
+            value = tokens[i + 1]
+    return value
+
+
 def format_options(output_format, command_options):
     """
     Spectre options selecting the output format: ['-format', output_format], or nothing if
     command_options already choose one with -f or -format (those win)
     """
-    tokens = ' '.join(str(o) for o in command_options).split()
+    tokens = _tokens(command_options)
     if '-f' in tokens or '-format' in tokens:
         return []
     if output_format is None:
         output_format = default_output_format()
-    if output_format not in OUTPUT_FORMATS:
-        raise ValueError(f'output_format {output_format!r} is not supported; use one of {OUTPUT_FORMATS}')
+    if output_format not in OUTPUT_FORMATS + NUTMEG_FORMATS:
+        raise ValueError(f'output_format {output_format!r} is not supported; use one of {OUTPUT_FORMATS + NUTMEG_FORMATS}')
     return ['-format', output_format]
+
+
+def run_format(command_options):
+    """The format Spectre writes with these options: their -f or -format, else the default"""
+    return _option_value(_tokens(command_options), ['-f', '-format']) or default_output_format()
+
+
+def raw_options(output_dir, command_options):
+    """
+    (options, raw_path, given): the -raw option for a run whose results go in output_dir,
+    where Spectre writes them, and whether command_options chose that place.
+    A -raw in command_options wins: options is then empty and raw_path is its value, the full
+    path. Otherwise PSF formats write their files into output_dir itself, and nutbin and
+    nutascii, which write one file, write output_dir/output.raw (Spectre cannot open a folder
+    as that file: CMI-2011, "Unable to open the raw file").
+    """
+    given = _option_value(_tokens(command_options), ['-raw'])
+    if given is not None:
+        return [], to_path(given), True
+    if run_format(command_options) in NUTMEG_FORMATS:
+        raw_path = to_path(output_dir, NUTMEG_RAW_FILE)
+    else:
+        raw_path = output_dir
+    return ['-raw', raw_path], raw_path, False
 
 
 class Spectre(object):
@@ -46,6 +88,9 @@ class Spectre(object):
         self.netlist_dir = netlist_dir
         self.output_dir = output_dir
         self.log_dir = log_dir
+        # Where Spectre writes, and in which format (see raw_options)
+        self.raw_format = run_format(self.command_options)
+        self.raw_options, self.raw_path, self.raw_given = raw_options(output_dir, self.command_options)
 
         # Initialization
         self.analyses = analyses # []
@@ -177,7 +222,10 @@ class Spectre(object):
         corner = self.corner
         netlist_filename = f'{corner.name}.txt'
         netlist_path = to_path(self.netlist_dir, netlist_filename)
-        simulation_raw_dir = self.output_dir
+        # The format and place of the last finished run of this netlist, written when it
+        # finishes: a cached result is used only if both are the same
+        run_record_path = to_path(self.netlist_dir, f'{corner.name}.run')
+        run_record = self._run_record()
         # Check cache
         if cache:
             prev_netlist = cat(netlist_path)
@@ -189,17 +237,26 @@ class Spectre(object):
                 prev_netlist_ = prev_netlist
                 new_netlist_ = new_netlist
 
-            if (new_netlist_ == prev_netlist_):
+            prev_record = cat(run_record_path)
+            if prev_record is None:
+                # Runs from before the record: all were PSF into the output folder
+                same_run = self.raw_format not in NUTMEG_FORMATS and not self.raw_given
+            else:
+                same_run = prev_record == run_record
+            if (new_netlist_ == prev_netlist_) and same_run:
                 display(f'Netlist unchanged, skip simulation. Corner: {corner}')
                 return True
 
         display('Writing netlist')
         # Write netlist to file
         self.write_netlist(corner)
+        # Until this run finishes, no result counts as cached
+        writef('', run_record_path)
 
         # Spectre commands
-        popen_cmd = f"spectre {netlist_path} " + \
-            f"-raw {simulation_raw_dir} "
+        popen_cmd = f"spectre {netlist_path} "
+        for opt in self.raw_options:
+            popen_cmd += f"{opt} "
         for cmd in self.command_options:
             popen_cmd += f"{cmd} "
 
@@ -243,8 +300,19 @@ class Spectre(object):
             if errors:
                 raise SpectreError(log_file)
 
+        writef(run_record, run_record_path)
         display("SPECTRE SIMULATION COMPLETE")
-        display(f"Raw data directory: {simulation_raw_dir}")
+        display(f"Raw data: {self.raw_path}")
+
+    def _run_record(self):
+        """What a cached result must have been run with: the format, and -raw (the default's file name, or the path given)"""
+        if self.raw_given:
+            raw = str(self.raw_path)
+        elif self.raw_format in NUTMEG_FORMATS:
+            raw = NUTMEG_RAW_FILE
+        else:
+            raw = '.'
+        return f'format {self.raw_format}\nraw {raw}\n'
 
 
 class SpectreError(Exception):
@@ -454,8 +522,11 @@ def parse_spectre_line(line_s: str) -> LogEvent:
 
 def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_dir, corner, command_options=[], tqdm_pos=0, output_format=None, **kwargs):
         # Build spectre command
-        fmt = " ".join(format_options(output_format, command_options))
-        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} {fmt} -log -ahdllibdir {simulation_raw_dir} "
+        fmt_options = format_options(output_format, command_options)
+        fmt = " ".join(fmt_options)
+        raw_opts, raw_path, _ = raw_options(simulation_raw_dir, fmt_options + list(command_options))
+        raw = " ".join(str(o) for o in raw_opts)
+        popen_cmd = f"spectre {netlist_path} {raw} {fmt} -log -ahdllibdir {simulation_raw_dir} "
         for cmd in command_options:
             popen_cmd += f"{cmd} "
 
@@ -579,13 +650,16 @@ def run_spectre_parse_progress(netlist_path, sim_name, log_dir, simulation_raw_d
             raise SpectreError(log_file_sim)
 
         display("SPECTRE SIMULATION COMPLETE")
-        display(f"Raw data directory: {simulation_raw_dir}")
+        display(f"Raw data: {raw_path}")
 
 def run_spectre(netlist_path, log_dir, simulation_raw_dir, command_options=[], output_format=None, **kwargs):
         # Build spectre command
         log_file = to_path(log_dir, 'spectre_sim.log')
-        fmt = " ".join(format_options(output_format, command_options))
-        popen_cmd = f"spectre {netlist_path} -raw {simulation_raw_dir} {fmt} =log {log_file} -ahdllibdir {simulation_raw_dir} "
+        fmt_options = format_options(output_format, command_options)
+        fmt = " ".join(fmt_options)
+        raw_opts, _, _ = raw_options(simulation_raw_dir, fmt_options + list(command_options))
+        raw = " ".join(str(o) for o in raw_opts)
+        popen_cmd = f"spectre {netlist_path} {raw} {fmt} =log {log_file} -ahdllibdir {simulation_raw_dir} "
         for cmd in command_options:
             popen_cmd += f"{cmd} "
 

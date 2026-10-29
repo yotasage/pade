@@ -28,6 +28,15 @@ With kymograf:
   setting of `Test` and `Spectre`: `'psfbin'` by default when kymograf is installed (smaller and
   faster than psfascii), `'psfascii'` otherwise; `'psfbinf'` is accepted. A `-f`/`-format` in
   `command_options` overrides it.
+- `'nutbin'` and `'nutascii'` are accepted too. Spectre writes them as one file, not a folder,
+  so PADE passes `-raw simulation_output/output.raw` for them (Spectre stops with CMI-2011,
+  "Unable to open the raw file", if `-raw` names a folder). PSFParser does not read them: the
+  simulation runs and parsing is skipped with a warning.
+- A `-raw PATH` in `command_options` wins over PADE's, for every format: PATH is used as given,
+  the full path. PSF results are then parsed from PATH.
+- The cache (`run(cache=True)`) skips a simulation only if the netlist is unchanged and its last
+  run finished with the same format and `-raw` (`netlists/<corner>.run` records them). A run that
+  failed or was stopped is never taken for a cached result.
 - If a result file changes after `parse()` (a new simulation into the same directory), reading
   it raises `kymograf.FileChangedError` instead of mixing old and new; parse again.
 

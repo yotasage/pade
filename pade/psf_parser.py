@@ -13,18 +13,14 @@ import re
 import shutil
 import tempfile
 
-# kymograf reads psfascii, psfbin and psfbinf lazily and selectively, and PSFXL since its
-# 2026-10-29 builds (they have PsfFile.psfxl). Without it, psf_utils reads psfascii only, and
-# every signal is loaded by parse().
+# kymograf reads psfascii, psfbin, psfbinf and PSFXL lazily and selectively. Without it,
+# psf_utils reads psfascii only, and every signal is loaded by parse().
 try:
     from kymograf.compat import PSF, Quantity
-    import kymograf as _kymograf
     HAVE_KYMOGRAF = True
-    KYMOGRAF_READS_PSFXL = hasattr(_kymograf.PsfFile, 'psfxl')
 except ImportError:
     from psf_utils import PSF, Quantity
     HAVE_KYMOGRAF = False
-    KYMOGRAF_READS_PSFXL = False
 
 
 class _Pending:

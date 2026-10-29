@@ -7,8 +7,7 @@ from pade import display, succeed, fatal, warn
 from datetime import datetime
 from dataclasses import dataclass
 
-# Output formats PSFParser reads (psfbin and psfbinf need kymograf; psfxl a kymograf that reads
-# PSFXL)
+# Output formats PSFParser reads (psfbin, psfbinf and psfxl need kymograf)
 OUTPUT_FORMATS = ['psfbin', 'psfascii', 'psfbinf', 'psfxl']
 
 
@@ -30,10 +29,6 @@ def format_options(output_format, command_options):
         output_format = default_output_format()
     if output_format not in OUTPUT_FORMATS:
         raise ValueError(f'output_format {output_format!r} is not supported; use one of {OUTPUT_FORMATS}')
-    if output_format == 'psfxl':
-        from pade.psf_parser import KYMOGRAF_READS_PSFXL
-        if not KYMOGRAF_READS_PSFXL:
-            raise ValueError("output_format 'psfxl' needs a kymograf that reads PSFXL (built 2026-10-29 or later); install a newer kymograf wheel, or use psfbin")
     return ['-format', output_format]
 
 
